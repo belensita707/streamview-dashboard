@@ -11,20 +11,17 @@ CÓMO EJECUTAR
 1) Instala las dependencias (una sola vez):
        pip install streamlit pandas plotly
 
-2) Coloca este archivo en la misma carpeta que:
-       netflix_movies_detailed_up_to_2025.csv
-       netflix_tv_shows_detailed_up_to_2025.csv
+2) Coloca este archivo en la carpeta dashboard/ y los CSV en la carpeta data/
 
-3) Ejecuta desde la terminal:
-       streamlit run dashboard_streamview_analytics.py
-   (o "python -m streamlit run dashboard_streamview_analytics.py" si el
+3) Ejecuta desde la terminal (estando en la carpeta raíz del proyecto):
+       streamlit run dashboard/dashboard_streamview_analytics.py
+   (o "python -m streamlit run dashboard/dashboard_streamview_analytics.py" si el
    comando "streamlit" no está en el PATH del sistema)
 
    Se abrirá automáticamente en el navegador (por defecto http://localhost:8501).
 """
-
+import os
 import re
-
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -222,12 +219,29 @@ def explode_columna(df, columna):
 
 @st.cache_data
 def cargar_datos():
-    df_movies_raw = pd.read_csv('../data/netflix_movies_detailed_up_to_2025.csv')
-    df_tv_raw = pd.read_csv('../data/netflix_tv_shows_detailed_up_to_2025.csv')
-
+    # Obtener la ruta absoluta donde está este script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Subir un nivel para llegar a la raíz del proyecto
+    root_dir = os.path.dirname(script_dir)
+    # Construir la ruta a la carpeta data
+    data_dir = os.path.join(root_dir, 'data')
+    
+    # Rutas completas a los archivos CSV
+    movies_path = os.path.join(data_dir, 'netflix_movies_detailed_up_to_2025.csv')
+    tv_path = os.path.join(data_dir, 'netflix_tv_shows_detailed_up_to_2025.csv')
+    
+    # Verificar que los archivos existan
+    if not os.path.exists(movies_path):
+        raise FileNotFoundError(f"No se encontró: {movies_path}")
+    if not os.path.exists(tv_path):
+        raise FileNotFoundError(f"No se encontró: {tv_path}")
+    
+    df_movies_raw = pd.read_csv(movies_path)
+    df_tv_raw = pd.read_csv(tv_path)
+    
     df_movies = limpiar_dataset(df_movies_raw, 'Película')
     df_tv = limpiar_dataset(df_tv_raw, 'Serie TV')
-
+    
     columnas_comunes = [
         'id_unico', 'show_id', 'content_type', 'title', 'director', 'cast', 'country',
         'release_year', 'genres', 'language', 'description',
@@ -243,7 +257,7 @@ except FileNotFoundError:
     st.error(
         "No se encontraron los archivos de datos. Este dashboard necesita "
         "`netflix_movies_detailed_up_to_2025.csv` y `netflix_tv_shows_detailed_up_to_2025.csv` "
-        "en la misma carpeta que este script."
+        "dentro de la carpeta `data/` en el directorio raíz del proyecto."
     )
     st.stop()
 
