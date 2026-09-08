@@ -222,8 +222,8 @@ def explode_columna(df, columna):
 
 @st.cache_data
 def cargar_datos():
-    df_movies_raw = pd.read_csv('netflix_movies_detailed_up_to_2025.csv')
-    df_tv_raw = pd.read_csv('netflix_tv_shows_detailed_up_to_2025.csv')
+    df_movies_raw = pd.read_csv('../data/netflix_movies_detailed_up_to_2025.csv')
+    df_tv_raw = pd.read_csv('../data/netflix_tv_shows_detailed_up_to_2025.csv')
 
     df_movies = limpiar_dataset(df_movies_raw, 'Película')
     df_tv = limpiar_dataset(df_tv_raw, 'Serie TV')
