@@ -1,164 +1,113 @@
-# StreamView Analytics — Solución de Visual Analytics
+# StreamView Analytics — ¿Dónde conviene invertir el presupuesto de contenido?
 
 **Asignatura:** ADY1104 — Visualización de Datos · Duoc UC
 **Docente:** Guillermo Pinto
 **Integrantes:** Genesis Baeza, Jimena Galicia
-**Caso:** StreamView Analytics — Visual Analytics para la toma de decisiones sobre contenidos digitales
 
 ---
 
-## 1. Problema de negocio
+## 1. La historia en un minuto
 
-StreamView Analytics es una plataforma internacional de streaming que administra un catálogo de **31.991 títulos** (16.000 películas y 15.991 series, 2010–2025). Su ventaja competitiva depende de tres palancas: retención de suscriptores, engagement con el catálogo y acierto en las preferencias de consumo.
+StreamView administra un catálogo de **31.991 títulos** (16.000 películas y 15.991 series, 2010–2025). Sus áreas usan reportes distintos, y las decisiones de inversión se toman con información parcial. Este dashboard responde una pregunta: **¿qué segmentos del catálogo conviene priorizar?**
 
-El problema no es falta de datos, sino de consolidación: cada área de la organización utiliza reportes independientes construidos con criterios distintos. Como consecuencia, conviven múltiples versiones de un mismo indicador, los ejecutivos dedican su tiempo a interpretar reportes en vez de decidir, y las decisiones de adquisición de contenido se toman con información parcial.
+1. **Las Series puntúan más que las Películas** (7,03 vs. 6,31): todos los años y en los 8 géneros comparables. La ventaja crece al exigir más votos.
+2. **Lo popular no siempre es lo bueno**: popularidad y nota se relacionan solo en parte (ρ = 0,32 con todos los títulos; 0,46 con 50+ votos).
+3. **Hay que mirar también el dinero**: el Horror tiene la nota más baja de las películas, pero el mayor retorno financiero mediano (2,5× frente a 1,8× de la película típica).
 
-> **Pregunta que responde este proyecto:**
-> ¿Qué segmentos del catálogo — formato, género, país — concentran mayor engagement y mejor percepción de calidad, y cómo debería StreamView priorizar su inversión de contenido?
-
-**Audiencia objetivo:** Comité Directivo de Contenido (Chief Content Officer, VP de Estrategia, Dirección General), con audiencias secundarias en Data & Analytics y Marketing.
-
----
-
-## 2. Hallazgos principales
-
-| Hallazgo | Evidencia |
-|---|---|
-| Las Series superan a las Películas en calidad percibida, de forma estructural | 7,03 vs. 6,31 sobre 10; brecha estable durante los 16 años del catálogo |
-| Las Series ya lideran en volumen en la mayoría de géneros comparables | 5 de 8 géneros con taxonomía idéntica |
-| Popularidad y calidad son señales casi independientes | Correlación r ≈ 0,16 (títulos con ≥100 votos) |
-| Japón y China combinan escala internacional y alta calificación en Series | 2.º y 3.er lugar en volumen de series del catálogo |
-| Documental (Película) es el género mejor evaluado pero el menos popular | Horror (Película) es el caso opuesto: alto volumen, la nota más baja |
+**Audiencia:** Comité Directivo de Contenido, con apoyo de Data & Analytics y Marketing.
 
 ---
 
-## 3. Estructura del proyecto
+## 2. Estructura del proyecto
 
 ```
 streamview-dashboard/
-├── README.md                              <- Este archivo
-├── requirements.txt                       <- Dependencias
-├── data/
-│   ├── netflix_movies_detailed_up_to_2025.csv
-│   └── netflix_tv_shows_detailed_up_to_2025.csv
-├── notebooks/
-│   └── analisis_streamview.ipynb          <- EDA, visualizaciones y storytelling
+├── README.md
+├── requirements.txt
+├── .devcontainer.json               <- Codespaces (renombrar a .devcontainer/devcontainer.json)
+├── .streamlit/config.toml           <- Tema de colores
+├── data/                            <- Los dos CSV originales
+├── notebooks/                       <- Análisis exploratorio
 ├── dashboard/
-│   └── dashboard_streamview_analytics.py  <- Dashboard interactivo (Streamlit)
-├── images/                                <- Capturas de los gráficos exportados
+│   └── dashboard_streamview_analytics.py
+├── images/                          <- Capturas exportadas
 └── src/
-    └── README.md                          <- Ver nota de arquitectura más abajo
+    ├── utils_datos.py               <- Limpieza, filtros y cálculos (una sola fuente de verdad)
+    └── paleta.py                    <- Colores
 ```
+
+`utils_datos.py` concentra toda la lógica de datos. El dashboard (y, si se quiere, el notebook) la importan, así las cifras no pueden contradecirse entre entregables.
 
 ---
 
-## 4. Cómo ejecutar
-
-### Requisitos
-Python 3.9 o superior.
-
-### Instalación
-Desde la raíz del repositorio:
+## 3. Cómo ejecutar
 
 ```bash
 pip install -r requirements.txt
+streamlit run dashboard/dashboard_streamview_analytics.py
 ```
 
-### Ejecutar el dashboard
-
-> **Importante — leer antes de ejecutar.**
-> El script del dashboard carga los datasets por **nombre de archivo**, lo que Python resuelve contra el **directorio de trabajo actual**, no contra la ubicación del script. Por eso el comando debe lanzarse **desde dentro de `data/`**:
-
-```bash
-cd data
-streamlit run ../dashboard/dashboard_streamview_analytics.py
-```
-
-En Windows, si el comando `streamlit` no se reconoce (habitual cuando Python se instaló desde la Microsoft Store, que no agrega los scripts al PATH), usa la forma equivalente:
-
-```bash
-cd data
-python -m streamlit run ../dashboard/dashboard_streamview_analytics.py
-```
-
-El dashboard se abrirá automáticamente en el navegador, por defecto en `http://localhost:8501`. Para detenerlo, presiona `Ctrl+C` en la terminal.
-
-**Si prefieres ejecutar desde la raíz**, copia los dos CSV también a la raíz del repositorio y usa `streamlit run dashboard/dashboard_streamview_analytics.py`. Funciona igual, con el costo de duplicar los archivos de datos.
-
-### Ejecutar el notebook
-
-```bash
-cd notebooks
-jupyter notebook analisis_streamview.ipynb
-```
-
-El notebook también carga los CSV por nombre de archivo. Si al ejecutarlo aparece `FileNotFoundError`, ajusta la ruta de `pd.read_csv` a `'../data/netflix_movies_detailed_up_to_2025.csv'` (y su equivalente para series), o ejecuta Jupyter desde la carpeta `data/`.
+Si `streamlit` no se reconoce en Windows: `python -m streamlit run dashboard/dashboard_streamview_analytics.py`.
+El dashboard **busca solo la carpeta `data/`**, se puede lanzar desde cualquier carpeta del proyecto.
 
 ---
 
-## 5. El dashboard
+## 4. El dashboard: una pregunta por pestaña
 
-**KPIs dinámicos** (se recalculan con cada filtro): títulos en el filtro, calificación promedio, popularidad mediana, % Serie TV y género principal.
+Cada pestaña empieza con la **respuesta corta** (caja amarilla) y luego muestra la evidencia.
 
-**Filtros laterales:** tipo de contenido, año de lanzamiento, mínimo de votos acumulados y género.
+| Pestaña | Pregunta | Gráficos |
+|---|---|---|
+| 1. La historia | ¿Qué está ocurriendo? | Nota por formato · evolución por año · prueba de robustez (votos mínimos) |
+| 2. Géneros | ¿En qué géneros ocurre? | Nota y cantidad por género comparable · portafolio nota vs. popularidad |
+| 3. Popular vs. bueno | ¿Lo popular es lo mejor evaluado? | Dispersión por título · tabla de relación según votos mínimos |
+| 4. Países e idiomas | ¿De dónde viene el contenido? | Top 10 países de series · idiomas |
+| 5. Finanzas | ¿Cuánto rinden las películas? | Retorno por género · presupuesto vs. ingresos |
+| 6. Qué decidir | ¿Qué decisiones se desprenden? | Cuatro recomendaciones con evidencia · indicador compuesto de ejemplo |
+| Explorar datos | — | Tabla filtrable con descarga a CSV |
 
-**Navegación por pestañas:**
-
-| Pestaña | Contenido |
-|---|---|
-| Resumen | Comparación general Película vs. Serie TV |
-| Géneros | Volumen por género comparable y portafolio popularidad/calificación |
-| Evolución temporal | Calificación promedio por año de lanzamiento |
-| Popularidad vs. Calificación | Dispersión por título, con correlación calculada en vivo |
-| Países | Top países productores de series: volumen y calificación |
-| Explorar datos | Tabla filtrable con exportación a CSV |
-
----
-
-## 6. Decisiones de diseño visual
-
-- **Paleta reducida y semántica.** Solo dos colores portan significado: ámbar `#C97B30` para Películas y azul marino `#0B3D62` para Series, idénticos en el notebook, el dashboard y la presentación. Aplica el principio de **similitud** (Gestalt): el usuario aprende el código de color una sola vez.
-- **Cercado.** Los KPIs viven dentro de tarjetas con borde propio, de modo que se perciben como un grupo único y no como cinco números sueltos.
-- **Atributos preatentivos jerarquizados.** La longitud codifica las comparaciones críticas; el color, solo la categoría; el tamaño, las variables de apoyo.
-- **Carga cognitiva minimizada.** Escala logarítmica y opacidad reducida en las dispersiones densas; títulos que comunican el hallazgo en vez del tema.
+**KPIs dinámicos** (se recalculan con los filtros): títulos, calificación de Películas, calificación de Series, diferencia entre ambas y popularidad Series ÷ Películas.
+**Filtros:** tipo de contenido, año, mínimo de votos y género. **Glosario** y **reglas de los datos** en el panel lateral.
 
 ---
 
-## 7. Nota de arquitectura sobre `src/`
+## 5. Decisiones de diseño
 
-En esta versión el dashboard es **autocontenido**: incluye su propia lógica de carga y limpieza, sin depender de módulos externos. Esa decisión prioriza la portabilidad — el archivo se ejecuta tal cual, sin configurar rutas de importación — a cambio de mantener la limpieza de datos definida en el dashboard y en el notebook por separado.
-
-La carpeta `src/` se conserva por coherencia con la estructura profesional solicitada y documenta esta decisión. La evolución natural del proyecto sería extraer la limpieza a un módulo compartido en `src/`, de modo que ambos entregables importen la misma lógica y no puedan divergir en las cifras.
-
----
-
-## 8. Limitaciones conocidas
-
-- Los datos son **a nivel de catálogo**, no de comportamiento de usuario: no hay sesiones, tiempo de visualización ni *churn*. El engagement se trabaja con **proxies** (popularidad y volumen de votos), no como medición directa.
-- Conforme a la regla de negocio 5 del caso, `popularity` es un **índice relativo** y no representa cantidad de reproducciones.
-- Las columnas `duration` (100 % nula en Películas, constante en Series) y `rating` (idéntica a `vote_average`) resultaron no utilizables.
-- `date_added` coincide con `release_year` en el 100 % de las filas.
-- `budget` y `revenue` existen solo para Películas y con 69,7 % y 64,7 % de valores en cero respectivamente, por lo que se excluyeron del análisis principal (regla de negocio 6).
-- El catálogo contiene exactamente **1.000 títulos por año** en cada fuente: es una muestra curada, no el crecimiento orgánico real. Por eso el proyecto evita graficar "volumen de contenido en el tiempo".
-- Los títulos de 2024–2025 presentan sesgo de *arranque en frío* en `vote_count` y `popularity`, mitigado con umbrales mínimos de votos.
-- Las taxonomías de género difieren entre catálogos, lo que restringe la comparación directa a 8 géneros.
+- **Colores de Duoc UC con un solo significado cada uno:** amarillo `#FCB426` = Películas, azul oscuro `#00263E` = Series TV, negro = solo texto. Aplica el principio de **similitud** (Gestalt): el color se aprende una vez. Amarillo sobre azul contrasta 8,7:1 y la diferencia de claridad lo hace distinguible para personas con daltonismo.
+- **El amarillo sobre blanco contrasta poco** (1,8:1), por eso nunca se usa para texto y las líneas son gruesas.
+- **Respuesta antes que evidencia:** títulos y cajas que comunican el hallazgo, no el tema del gráfico.
+- **Cercado:** los KPIs viven en tarjetas con borde propio.
+- **Una sola regla para las cifras:** por defecto se analiza el catálogo completo (nota > 0). Las comprobaciones con votos mínimos se muestran aparte y rotuladas.
+- **Popularidad con mediana, relación con Spearman (por rangos):** unos pocos títulos extremos no deben mandar sobre el resto.
 
 ---
 
-## 9. Recomendaciones
+## 6. Reglas y limitaciones de los datos
 
-1. **Reorientar progresivamente el mix hacia Series originales**, priorizando géneros con evidencia simultánea de volumen y calidad (Animación, Acción y Aventura, Sci-Fi) y los mercados de Japón, China y Corea del Sur.
-2. **Proteger el catálogo de Documentales** en Películas como diferenciador de calidad de nicho, sin exigirle métricas de alcance masivo.
-3. **Auditar la inversión en Horror (Película)**: es el 4.º género más grande del catálogo de películas y tiene la calificación más baja del análisis.
-4. **Adoptar un KPI compuesto** para las decisiones de luz verde: popularidad y calificación están débilmente correlacionadas.
+- **Datos de catálogo, no de comportamiento:** no hay sesiones ni tiempo de visualización. El engagement se aproxima con popularidad y votos (`popularity` es un índice relativo, no reproducciones).
+- **Muestra elegida:** cada año trae exactamente 1.000 películas y ~1.000 series. La cantidad por año la fijó quien preparó los datos, así que **no se puede medir el crecimiento del catálogo**; sí comparar notas y popularidad.
+- **Nota 0 = sin calificación** (899 películas y 3.665 series): se excluye de los promedios de nota.
+- **Notas con pocos votos son poco confiables:** la mitad de las series calificadas tiene menos de 10 votos. Por eso se verifica que la ventaja de las Series se mantiene exigiendo más votos.
+- **8 géneros comparables:** Drama, Comedia, Animación, Crimen, Familia, Misterio, Documental y Western.
+- **Finanzas:** solo ~21% de las películas informa presupuesto e ingresos (≥ US$ 100.000). El ROI es bruto (sin marketing ni reparto con salas).
+- **Variables descartadas:** `duration` (sin información), `rating` (idéntica a `vote_average`), `date_added` (coincide con `release_year`).
 
 ---
 
-## 10. Tecnologías
+## 7. Recomendaciones
+
+1. **Apostar por las Series**, priorizando Acción y Aventura, Sci-Fi y Fantasía, y Animación; mirar primero Japón y China. (Los datos no distinguen series originales de licenciadas.)
+2. **Proteger el Documental** como nicho de calidad: mejor nota entre las películas, pero popularidad baja. Evaluarlo por calidad, no por alcance.
+3. **No juzgar al Horror por su nota:** evaluarlo por costo y retorno, como producción de bajo presupuesto.
+4. **Decidir con dos métricas:** usar un indicador compuesto de popularidad y nota para las decisiones de luz verde.
+
+---
+
+## 8. Tecnologías
 
 | Herramienta | Uso |
 |---|---|
-| Python 3 · pandas | Carga, limpieza e integración de datos |
-| Plotly Express | Visualizaciones interactivas |
+| Python · pandas | Carga, limpieza, integración y cálculo |
+| Plotly Express | Gráficos interactivos |
 | Streamlit | Dashboard interactivo |
-| Jupyter Notebook | Informe de análisis reproducible |
+| Jupyter Notebook | Análisis exploratorio reproducible |
