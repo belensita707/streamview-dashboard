@@ -229,7 +229,7 @@ def correlacion_pop_calif(df):
     c = calificados(df)
     if len(c) < 30:
         return None, len(c)
-    rho = c["popularity"].corr(c["vote_average"], method="spearman")
+    rho = c["popularity"].rank().corr(c["vote_average"].rank())
     return (None if pd.isna(rho) else float(rho)), int(len(c))
 
 
