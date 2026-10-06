@@ -30,6 +30,10 @@ for _ruta in (_AQUI, os.path.join(_AQUI, "src"), os.path.dirname(_AQUI),
         sys.path.append(_ruta)
 
 import utils_datos as ud  # noqa: E402
+try:
+    import infografia as ig  # noqa: E402
+except ImportError:  # falta matplotlib u otro modulo
+    ig = None
 from paleta import (  # noqa: E402
     AMARILLO, AZUL, NEGRO, GRIS_TEXTO, GRIS_LINEA, GRIS_FONDO, AMARILLO_SUAVE,
     COLOR_FORMATO, ESCALA_SERIE, layout_base,
@@ -340,9 +344,9 @@ c5.metric("Popularidad Series ÷ Películas",
 # ============================================================
 # PESTANAS
 # ============================================================
-t1, t2, t3, t4, t5, t6, t7 = st.tabs([
+t1, t2, t3, t4, t5, t6, t8, t7 = st.tabs([
     "1. La historia", "2. Géneros", "3. Popular vs. bueno",
-    "4. Países e idiomas", "5. Finanzas", "6. Qué decidir", "Explorar datos",
+    "4. Países e idiomas", "5. Finanzas", "6. Qué decidir", "7. Infografía", "Explorar datos",
 ])
 
 # ---------------------------------------------------------------
@@ -871,6 +875,54 @@ with t6:
 # ---------------------------------------------------------------
 # EXPLORAR DATOS
 # ---------------------------------------------------------------
+# ---------------------------------------------------------------
+# 7. INFOGRAFIA DEL SEGMENTO (se genera con los filtros activos)
+# ---------------------------------------------------------------
+with t8:
+    encabezado_seccion(
+        "Infografía del segmento filtrado",
+        "Aplica filtros en el panel lateral y genera un informe breve y un volante A4 con cifras, ranking de mayor a menor y recomendación.",
+    )
+    if ig is None:
+        st.error("Falta la librería matplotlib. Agrégala a requirements.txt (matplotlib) e instálala.")
+    else:
+        c1, c2 = st.columns(2)
+        criterio_lbl = c1.selectbox("Ordenar el ranking por", list(ud.CRITERIOS_RANKING.keys()), key="ig_criterio")
+        titulo_ig = c2.text_input("Título personalizado (opcional)", key="ig_titulo",
+                                  placeholder="Ej.: Series de Animación 2015–2025")
+        criterio_ig = ud.CRITERIOS_RANKING[criterio_lbl]
+        firma = (tuple(tipos_sel), anio_min, anio_max, votos_min, tuple(generos_sel), criterio_ig, titulo_ig)
+
+        if st.button("Generar infografía con los filtros actuales", type="primary", key="ig_boton"):
+            try:
+                fig_ig = ig.construir_infografia(df_f, df_catalogo, tipos_sel, anio_min, anio_max, votos_min,
+                                                 generos_sel, criterio=criterio_ig, titulo=titulo_ig)
+                informe_md = ig.construir_informe(df_f, df_catalogo, tipos_sel, anio_min, anio_max, votos_min,
+                                                  generos_sel, criterio=criterio_ig, titulo=titulo_ig)
+                png_b, pdf_b = ig.exportar(fig_ig)
+                st.session_state["ig_resultado"] = {"firma": firma, "png": png_b, "pdf": pdf_b,
+                                                    "informe": informe_md}
+            except ValueError as e:
+                st.session_state.pop("ig_resultado", None)
+                st.warning(str(e))
+
+        res = st.session_state.get("ig_resultado")
+        if res:
+            if res["firma"] != firma:
+                st.info("Cambiaste los filtros después de generar esta infografía. "
+                        "Presiona el botón para actualizarla.")
+            d1, d2, d3 = st.columns(3)
+            nombre = "infografia_streamview"
+            d1.download_button("Descargar PNG", res["png"], file_name=nombre + ".png", mime="image/png")
+            d2.download_button("Descargar PDF", res["pdf"], file_name=nombre + ".pdf", mime="application/pdf")
+            d3.download_button("Descargar informe (.md)", res["informe"].encode("utf-8"),
+                               file_name=nombre + "_informe.md", mime="text/markdown")
+            with st.expander("Ver informe del segmento"):
+                st.markdown(res["informe"])
+            st.image(res["png"])
+        else:
+            st.caption("Aún no se ha generado ninguna infografía.")
+
 with t7:
     encabezado_seccion(
         "Explorador del catálogo filtrado",
