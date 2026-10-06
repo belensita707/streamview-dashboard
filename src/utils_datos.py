@@ -229,6 +229,8 @@ def correlacion_pop_calif(df):
     c = calificados(df)
     if len(c) < 30:
         return None, len(c)
+    # Spearman = correlacion de Pearson entre las POSICIONES (rangos) de ambas variables.
+    # Se calcula asi para no depender de scipy (da el mismo resultado).
     rho = c["popularity"].rank().corr(c["vote_average"].rank())
     return (None if pd.isna(rho) else float(rho)), int(len(c))
 
@@ -315,6 +317,51 @@ def indice_compuesto(df, votos_min=50, n=10):
 
 
 # ------------------------------------------------------------------
+# Ranking de titulos (para la infografia del segmento)
+# ------------------------------------------------------------------
+CRITERIOS_RANKING = {
+    "Combinado (popularidad + nota)": "indice",
+    "Calificación": "nota",
+    "Popularidad": "popularidad",
+}
+
+
+def ranking_titulos(df, criterio="indice", n=10, votos_min=50):
+    """Los n mejores titulos del segmento, ordenados de mayor a menor.
+
+    Solo entran titulos con calificacion real y al menos 'votos_min' votos (una nota basada en
+    3 votos no es confiable). Si con ese minimo no alcanzan n titulos, se baja el minimo
+    (50 -> 10 -> el del filtro) y se informa cual se uso.
+    Devuelve (tabla, votos_usados). 'valor' es la cifra por la que se ordeno.
+    """
+    base = calificados(df)
+    umbrales = sorted({votos_min, min(votos_min, 10), 0}, reverse=True)
+    elegibles, usado = base, 0
+    for u in umbrales:
+        elegibles = base[base["vote_count"] >= u]
+        usado = u
+        if len(elegibles) >= n:
+            break
+    if elegibles.empty:
+        return elegibles.assign(valor=[], indice=[]), usado
+
+    e = elegibles.copy()
+    e["indice"] = 100 * (e["popularity"].rank(pct=True) + e["vote_average"].rank(pct=True)) / 2
+    if criterio == "nota":
+        e["valor"] = e["vote_average"]
+        e = e.sort_values(["vote_average", "vote_count"], ascending=False)
+    elif criterio == "popularidad":
+        e["valor"] = e["popularity"]
+        e = e.sort_values("popularity", ascending=False)
+    else:
+        e["valor"] = e["indice"]
+        e = e.sort_values("indice", ascending=False)
+    cols = ["title", "content_type", "release_year", "popularity", "vote_average",
+            "vote_count", "indice", "valor"]
+    return e.head(n)[cols].reset_index(drop=True), usado
+
+
+# ------------------------------------------------------------------
 # Hallazgos para la pestana "Que decidir" (siempre sobre el catalogo completo)
 # ------------------------------------------------------------------
 def fila(tabla, columna, valor):
@@ -346,3 +393,4 @@ def hallazgos(df, df_peliculas):
     h["roi_global"] = float(fin["roi"].median()) if len(fin) else None
     h["roi_generos"] = roi_por_genero(fin, 80)
     return h
+
