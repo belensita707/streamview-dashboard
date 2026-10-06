@@ -32,6 +32,7 @@ streamview-dashboard/
 │   └── dashboard_streamview_analytics.py
 ├── images/                          <- Capturas exportadas
 └── src/
+    ├── infografia.py                <- Genera la infografía A4 (matplotlib) con los filtros activos
     ├── utils_datos.py               <- Limpieza, filtros y cálculos (una sola fuente de verdad)
     └── paleta.py                    <- Colores
 ```
@@ -64,6 +65,7 @@ Cada pestaña empieza con la **respuesta corta** (caja amarilla) y luego muestra
 | 4. Países e idiomas | ¿De dónde viene el contenido? | Top 10 países de series · idiomas |
 | 5. Finanzas | ¿Cuánto rinden las películas? | Retorno por género · presupuesto vs. ingresos |
 | 6. Qué decidir | ¿Qué decisiones se desprenden? | Cuatro recomendaciones con evidencia · indicador compuesto de ejemplo |
+| 7. Infografía | Volante A4 del segmento filtrado: cifras, ranking de mayor a menor y recomendación; descarga en PNG y PDF |
 | Explorar datos | — | Tabla filtrable con descarga a CSV |
 
 **KPIs dinámicos** (se recalculan con los filtros): títulos, calificación de Películas, calificación de Series, diferencia entre ambas y popularidad Series ÷ Películas.
@@ -109,5 +111,6 @@ Cada pestaña empieza con la **respuesta corta** (caja amarilla) y luego muestra
 |---|---|
 | Python · pandas | Carga, limpieza, integración y cálculo |
 | Plotly Express | Gráficos interactivos |
+| Matplotlib | Infografía exportable (PNG y PDF) |
 | Streamlit | Dashboard interactivo |
 | Jupyter Notebook | Análisis exploratorio reproducible |
