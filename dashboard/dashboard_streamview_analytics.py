@@ -232,10 +232,6 @@ st.sidebar.markdown(
     unsafe_allow_html=True,
 )
 
-tipos_sel = st.sidebar.multiselect(
-    "Tipo de contenido", options=ORDEN_TIPO, default=ORDEN_TIPO,
-    help="Incluye o excluye Películas y/o Series TV.",
-)
 anio_min, anio_max = st.sidebar.slider(
     "Año de lanzamiento", min_value=2010, max_value=2025, value=(2010, 2025),
     help="El catálogo cubre 2010–2025.",
@@ -284,11 +280,6 @@ st.sidebar.markdown("---")
 st.sidebar.caption("Dashboard complementario al notebook de análisis. Mismos datos, misma limpieza, misma paleta.")
 
 # ============================================================
-# APLICACION DE FILTROS
-# ============================================================
-df_f = ud.aplicar_filtros(df_catalogo, tipos_sel, anio_min, anio_max, votos_min, generos_sel)
-
-# ============================================================
 # ENCABEZADO
 # ============================================================
 st.markdown(
@@ -301,6 +292,20 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+# ============================================================
+# FILTRO PRINCIPAL: PELICULAS / SERIES (visible arriba, no escondido en el panel)
+# ============================================================
+st.markdown("##### ¿Qué quieres ver?")
+vista = st.radio(
+    "Formato", ["Todo el catálogo", "Solo Películas", "Solo Series TV"], horizontal=True,
+    key="vista_tipo", label_visibility="collapsed",
+    help="Filtra todo el dashboard (excepto la pestaña 6) por formato. Los demás filtros están en el panel izquierdo.",
+)
+tipos_sel = {"Todo el catálogo": ORDEN_TIPO, "Solo Películas": ["Película"], "Solo Series TV": ["Serie TV"]}[vista]
+un_formato = len(tipos_sel) == 1
+
+df_f = ud.aplicar_filtros(df_catalogo, tipos_sel, anio_min, anio_max, votos_min, generos_sel)
 
 if df_f.empty:
     st.warning(
@@ -320,7 +325,7 @@ with st.expander("¿Cómo leer este dashboard?"):
 Cada pestaña responde **una pregunta** y empieza con la **respuesta corta** (caja amarilla).
 Debajo está la evidencia. El orden es: **1** qué ocurre → **2** en qué géneros → **3** si lo popular
 es lo bueno → **4** de dónde viene el contenido → **5** cuánto rinden las películas →
-**6** qué decidir. Los filtros del panel izquierdo recalculan todo menos la pestaña 6.
+**6** qué decidir. El selector «¿Qué quieres ver?» y los filtros del panel izquierdo recalculan todo menos la pestaña 6.
         """
     )
 
@@ -328,18 +333,32 @@ es lo bueno → **4** de dónde viene el contenido → **5** cuánto rinden las 
 # KPIs
 # ============================================================
 K = ud.kpis(df_f)
-c1, c2, c3, c4, c5 = st.columns(5)
-c1.metric("Títulos en el filtro", miles(K["n"]),
-          help=f"Títulos que cumplen los filtros, sobre {miles(len(df_catalogo))} del catálogo.")
-c2.metric("Calificación Películas", f"{num(K['calif_pelicula'])} / 10" if K["calif_pelicula"] is not None else "—",
-          help="Nota promedio de las películas con calificación real.")
-c3.metric("Calificación Series TV", f"{num(K['calif_serie'])} / 10" if K["calif_serie"] is not None else "—",
-          help="Nota promedio de las series con calificación real.")
-c4.metric("Diferencia (Series − Películas)", con_signo(K["brecha"]) if K["brecha"] is not None else "—",
-          help="Puntos de nota que las Series le sacan a las Películas. Necesita ambos formatos activos.")
-c5.metric("Popularidad Series ÷ Películas",
-          f"{num(K['pop_veces'], 1)}×" if K["pop_veces"] is not None else "—",
-          help="Cuántas veces mayor es la popularidad mediana de las Series frente a las Películas.")
+if un_formato:
+    cal = ud.calificados(df_f)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Títulos en el filtro", miles(K["n"]),
+              help=f"Títulos que cumplen los filtros, sobre {miles(len(df_catalogo))} del catálogo.")
+    c2.metric("Calificación promedio", f"{num(cal['vote_average'].mean())} / 10" if len(cal) else "—",
+              help="Nota promedio de los títulos con calificación real.")
+    c3.metric("Popularidad mediana", num(df_f["popularity"].median(), 1),
+              help="Índice relativo de interés; sirve para comparar, no es cantidad de reproducciones.")
+    c4.metric("Votos por título (mediana)", miles(df_f["vote_count"].median()),
+              help="Cuánta gente calificó un título típico: más votos = nota más confiable.")
+    st.caption("Estás viendo un solo formato, por eso se ocultan las comparaciones Series vs. Películas. "
+               "Para compararlos, vuelve a «Todo el catálogo».")
+else:
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Títulos en el filtro", miles(K["n"]),
+              help=f"Títulos que cumplen los filtros, sobre {miles(len(df_catalogo))} del catálogo.")
+    c2.metric("Calificación Películas", f"{num(K['calif_pelicula'])} / 10" if K["calif_pelicula"] is not None else "—",
+              help="Nota promedio de las películas con calificación real.")
+    c3.metric("Calificación Series TV", f"{num(K['calif_serie'])} / 10" if K["calif_serie"] is not None else "—",
+              help="Nota promedio de las series con calificación real.")
+    c4.metric("Diferencia (Series − Películas)", con_signo(K["brecha"]) if K["brecha"] is not None else "—",
+              help="Puntos de nota que las Series le sacan a las Películas.")
+    c5.metric("Popularidad Series ÷ Películas",
+              f"{num(K['pop_veces'], 1)}×" if K["pop_veces"] is not None else "—",
+              help="Cuántas veces mayor es la popularidad mediana de las Series frente a las Películas.")
 
 # ============================================================
 # PESTANAS
@@ -369,8 +388,8 @@ with t1:
             f"en el catálogo completo se repite <b>los 16 años</b>."
         )
     else:
-        nota("Para comparar Series y Películas, deja los dos formatos activos en el filtro "
-             "<b>Tipo de contenido</b>.")
+        nota("Para comparar Series y Películas, elige «Todo el catálogo» en «¿Qué quieres ver?»"
+             ".")
 
     col_a, col_b = st.columns([1, 2])
 
@@ -685,7 +704,7 @@ with t5:
     )
     ids_pel = df_f.loc[df_f["content_type"] == "Película", "id_unico"]
     if len(ids_pel) == 0:
-        st.info("Esta pestaña analiza Películas. Activa “Película” en el filtro de tipo de contenido.")
+        st.info("Esta pestaña analiza Películas. Elige «Todo el catálogo» o «Solo Películas» en «¿Qué quieres ver?».")
     else:
         fin = ud.datos_financieros(df_movies, ids=ids_pel)
         if fin.empty:
