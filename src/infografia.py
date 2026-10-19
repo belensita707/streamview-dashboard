@@ -119,6 +119,9 @@ MIN_CALIFICADOS_REC = 30      # con menos titulos calificados la lectura es solo
 UMBRAL_NOTA = 0.15            # puntos de nota sobre/bajo el catalogo para decir "alta" o "baja"
 UMBRAL_POP_ALTA = 1.15        # popularidad mediana del segmento / la del catalogo
 UMBRAL_POP_BAJA = 0.85
+MIN_SERIES_PAIS = 50          # series con 50+ votos que debe tener un pais para entrar a la franja
+MIN_PEL_FINANZAS = 30         # peliculas con presupuesto e ingresos para mostrar el retorno
+MIN_PEL_GENERO = 60           # idem, por genero
 
 
 def diagnosticar(df, catalogo):
@@ -255,7 +258,7 @@ def _ranking(fig, ranking, criterio, votos_usados):
 
 def _evolucion(fig, df):
     """Panel izquierdo: nota por año (si hay varios años) o por formato (si hay pocos)."""
-    ax = fig.add_axes([0.085, 0.282, 0.355, 0.135])
+    ax = fig.add_axes([0.085, 0.305, 0.355, 0.112])
     _estilo_ejes(ax)
     por_anio = ud.calif_por_anio(df)
     anios = sorted(por_anio["release_year"].unique())
@@ -294,7 +297,7 @@ def _evolucion(fig, df):
 
 def _tercer_panel(fig, df, generos_filtrados):
     """Panel derecho: generos con mejor nota (si no se filtro genero) o paises con mas titulos."""
-    ax = fig.add_axes([0.665, 0.282, 0.285, 0.135])
+    ax = fig.add_axes([0.665, 0.305, 0.285, 0.112])
     _estilo_ejes(ax)
     ax.spines["left"].set_visible(False)
     if not generos_filtrados:
@@ -312,7 +315,7 @@ def _tercer_panel(fig, df, generos_filtrados):
              .sort_values("titulos", ascending=False).head(6))
         notas = ud.calificados(x).groupby("country")["vote_average"].mean()
         t["nota"] = t["country"].map(notas)
-        titulo = "Países con más títulos"
+        titulo = "Países por cantidad de títulos"
         t["nombre"] = t["country"].map(ud.es_pais)
         valores, fmt = t["titulos"].tolist(), lambda v: _miles(v)
         extra = [f"nota {_num(n, 1)}" if n == n else "s/n" for n in t["nota"]]
@@ -333,12 +336,62 @@ def _tercer_panel(fig, df, generos_filtrados):
     return titulo
 
 
+def _bloque_paises(cv, x, y, w, h, df):
+    """Franja: 3 mejores paises para series (nota con 50+ votos). Se omite el dato si no hay series suficientes."""
+    cv.add_patch(Rectangle((x, y), w, h, facecolor=BLANCO, edgecolor=GRIS_LINEA, lw=0.8))
+    cv.add_patch(Rectangle((x, y + h - 0.005), w, 0.005, color=AMARILLO, lw=0))
+    cv.text(x + 0.014, y + h - 0.017, "MEJORES PAÍSES · SERIES", fontsize=8, fontweight="bold", color=TEXTO, va="center")
+    t = ud.paises_nota_50(df, min_titulos=MIN_SERIES_PAIS).head(3)
+    if t.empty:
+        cv.text(x + 0.014, y + h * 0.40, "Este segmento no tiene series\nsuficientes para comparar países.",
+                fontsize=8.5, color=TEXTO, va="center", linespacing=1.3)
+        return
+    for i, r in t.reset_index(drop=True).iterrows():
+        yy = y + h - 0.037 - i * 0.0135
+        cv.text(x + 0.014, yy, f"{i + 1}. {_recorta(ud.es_pais(r['country']), 20)}", fontsize=9.5,
+                fontweight="bold", color=NEGRO, va="center")
+        cv.text(x + w - 0.014, yy, f"{_num(r['nota'], 1)}  ·  {_miles(r['titulos'])} series", fontsize=8.5,
+                color=AZUL, va="center", ha="right", fontweight="bold")
+    cv.text(x + 0.014, y + 0.008, f"Nota de series con 50+ votos; solo países con {MIN_SERIES_PAIS}+ series así.",
+            fontsize=6.8, color=TEXTO, va="center", style="italic")
+
+
+def _bloque_dinero(cv, x, y, w, h, df, peliculas):
+    """Franja: retorno de la inversion (ingresos / presupuesto) de las peliculas que informan ambos datos."""
+    cv.add_patch(Rectangle((x, y), w, h, facecolor=BLANCO, edgecolor=GRIS_LINEA, lw=0.8))
+    cv.add_patch(Rectangle((x, y + h - 0.005), w, 0.005, color=AMARILLO, lw=0))
+    cv.text(x + 0.014, y + h - 0.017, "DINERO · PELÍCULAS", fontsize=8, fontweight="bold", color=TEXTO, va="center")
+    # 'df' no trae presupuesto ni ingresos: se toman de la tabla de peliculas, solo las del segmento
+    ids = df.loc[df["content_type"] == "Película", "id_unico"]
+    pel = peliculas[peliculas["id_unico"].isin(set(ids))] if peliculas is not None else peliculas
+    fin = ud.datos_financieros(pel) if pel is not None else None
+    if fin is None or len(fin) < MIN_PEL_FINANZAS:
+        cv.text(x + 0.014, y + h * 0.40, "Pocas películas informan presupuesto\ne ingresos en este segmento.",
+                fontsize=8.5, color=TEXTO, va="center", linespacing=1.3)
+        return
+    roi_med = float(fin["roi"].median())
+    cv.text(x + 0.014, y + h - 0.037, "Retorno típico", fontsize=9.5, fontweight="bold", color=NEGRO, va="center")
+    cv.text(x + w - 0.014, y + h - 0.037, f"{_num(roi_med, 1)}×", fontsize=11, color=AZUL, va="center",
+            ha="right", fontweight="bold")
+    g = ud.roi_por_genero(fin, min_n=MIN_PEL_GENERO)
+    if len(g):
+        r = g.iloc[0]
+        cv.text(x + 0.014, y + h - 0.0545, f"Mejor género: {_recorta(ud.es_genero(r['genres']), 14)}",
+                fontsize=9.5, fontweight="bold", color=NEGRO, va="center")
+        cv.text(x + w - 0.014, y + h - 0.0545, f"{_num(r['roi_mediano'], 1)}×", fontsize=11, color=AZUL,
+                va="center", ha="right", fontweight="bold")
+    pct = len(fin) / max(len(pel), 1) * 100
+    cv.text(x + 0.014, y + 0.008, f"Ingresos ÷ presupuesto (mediana). Solo el {_num(pct, 0)}% informa ambos datos.",
+            fontsize=6.8, color=TEXTO, va="center", style="italic")
+
+
 # ------------------------------------------------------------------
 # Funcion principal
 # ------------------------------------------------------------------
 def construir_infografia(df, catalogo, tipos, anio_min, anio_max, votos_min, generos,
-                         criterio="indice", titulo=None):
-    """Arma la figura (A4). 'df' es el catalogo YA filtrado; 'catalogo' es el completo (para comparar)."""
+                         criterio="indice", titulo=None, peliculas=None):
+    """Arma la figura (A4). 'df' es el catalogo YA filtrado; 'catalogo' es el completo (para comparar).
+    'peliculas' (opcional) es la tabla de peliculas con budget y revenue, para la franja de dinero."""
     if df.empty or len(ud.calificados(df)) < 5:
         raise ValueError("Hay muy pocos títulos calificados con estos filtros (mínimo 5). "
                          "Amplía el rango de años o quita algún filtro.")
@@ -413,22 +466,26 @@ def construir_infografia(df, catalogo, tipos, anio_min, anio_max, votos_min, gen
     titulo_c = _tercer_panel(fig, df, bool(generos))
     _titulo_seccion(cv, 0.575, 0.442, titulo_c)
 
-    # ---------- 4. Hallazgos ----------
-    _titulo_seccion(cv, 0.05, 0.250, "Hallazgos principales")
-    y = 0.226
-    for h in _hallazgos(df, catalogo, ranking, criterio)[:4]:
+    # ---------- 4. Hallazgos (los 2 que no repiten las tarjetas) ----------
+    _titulo_seccion(cv, 0.05, 0.268, "Hallazgos principales")
+    y = 0.246
+    for h in _hallazgos(df, catalogo, ranking, criterio)[2:4]:
         lineas = textwrap.wrap(h, width=90)
         cv.add_patch(Rectangle((0.05, y - 0.0035), 0.010, 0.0075, color=AMARILLO, ec=NEGRO, lw=0.5))
         cv.text(0.072, y - 0.0003, "\n".join(lineas), fontsize=9.8, color=NEGRO, va="center", linespacing=1.3)
         y -= 0.0160 * len(lineas) + 0.0080
 
+    # ---------- Paises y dinero ----------
+    _bloque_paises(cv, 0.05, 0.116, 0.4425, 0.084, df)
+    _bloque_dinero(cv, 0.5075, 0.116, 0.4425, 0.084, df, peliculas)
+
     # ---------- 5. Conclusion ----------
-    y_caja = 0.058
-    cv.add_patch(Rectangle((0.05, y_caja), 0.90, 0.076, facecolor=AMARILLO_SUAVE, lw=0))
-    cv.add_patch(Rectangle((0.05, y_caja), 0.008, 0.076, color=AMARILLO, lw=0))
-    cv.text(0.072, y_caja + 0.064, "RECOMENDACIÓN", fontsize=9, fontweight="bold", color=AZUL, va="center")
-    cv.text(0.072, y_caja + 0.031, _parrafo(_recomendacion(df, catalogo), 80), fontsize=10,
-            fontweight="bold", color=NEGRO, va="center", linespacing=1.35)
+    y_caja = 0.052
+    cv.add_patch(Rectangle((0.05, y_caja), 0.90, 0.056, facecolor=AMARILLO_SUAVE, lw=0))
+    cv.add_patch(Rectangle((0.05, y_caja), 0.008, 0.056, color=AMARILLO, lw=0))
+    cv.text(0.072, y_caja + 0.044, "RECOMENDACIÓN", fontsize=9, fontweight="bold", color=AZUL, va="center")
+    cv.text(0.072, y_caja + 0.019, _parrafo(_recomendacion(df, catalogo), 90), fontsize=9.5,
+            fontweight="bold", color=NEGRO, va="center", linespacing=1.3)
 
     # ---------- Pie ----------
     nota_pie = ("Fuente: catálogo de StreamView Analytics (31.991 títulos, 2010–2025). La popularidad es un índice "
