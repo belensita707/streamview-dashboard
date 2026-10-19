@@ -1,4 +1,3 @@
-[README.md](https://github.com/user-attachments/files/33648849/README.md)
 # StreamView Analytics — ¿Dónde conviene invertir el presupuesto de contenido?
 
 **Asignatura:** ADY1104 — Visualización de Datos · Duoc UC
@@ -84,7 +83,7 @@ Cada pestaña empieza con la **respuesta corta** (caja amarilla) y cada gráfico
 
 ### La infografía
 
-La pestaña 7 convierte el segmento filtrado en una hoja A4: título, cifras comparadas con el catálogo completo, ranking, gráficos de apoyo, hallazgos y una recomendación. Si el segmento incluye Series y Películas, el ranking muestra **los 5 mejores de cada formato** para poder compararlos.
+La pestaña 7 convierte el segmento filtrado en una hoja A4: título, cifras comparadas con el catálogo completo, ranking, gráficos de apoyo, hallazgos, una franja con los **mejores países para series** y el **retorno de las películas**, y una recomendación. Si el segmento incluye Series y Películas, el ranking muestra **los 5 mejores de cada formato** para poder compararlos.
 
 ![Infografía de ejemplo: todo el catálogo](images/infografia_ejemplo_catalogo.png)
 
