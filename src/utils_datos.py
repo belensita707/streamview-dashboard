@@ -279,13 +279,18 @@ def paises_nota_50(df, min_titulos=100):
     Devuelve tabla ordenada de mayor a menor nota."""
     s = calificados(df[df["content_type"] == "Serie TV"])
     s = s[s["vote_count"] >= 50]
-    cols = ["country", "titulos", "nota"]
+    cols = ["country", "titulos", "nota", "error"]
     if s.empty:
         return pd.DataFrame(columns=cols)
     x = explode_columna(s, "country")
-    t = (x.groupby("country").agg(titulos=("id_unico", "nunique"), nota=("vote_average", "mean"))
+    t = (x.groupby("country").agg(titulos=("id_unico", "nunique"), nota=("vote_average", "mean"),
+                                  desv=("vote_average", "std"))
          .reset_index())
-    return t[t["titulos"] >= min_titulos].sort_values("nota", ascending=False).reset_index(drop=True)
+    # Margen de error (95%) de la nota promedio: cuanto puede moverse el promedio por azar.
+    # Con pocos titulos es grande; con cientos, es pequeno.
+    t["error"] = 1.96 * t["desv"] / np.sqrt(t["titulos"])
+    t = t[t["titulos"] >= min_titulos].sort_values("nota", ascending=False).reset_index(drop=True)
+    return t[cols]
 
 
 def correlacion_por_formato(df, votos_min=50):
