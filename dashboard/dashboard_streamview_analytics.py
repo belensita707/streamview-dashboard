@@ -112,6 +112,13 @@ st.markdown(
         }}
         .respuesta b {{ color: {AZUL}; }}
 
+        /* ---- Pregunta que responde cada grafico ---- */
+        .pregunta {{
+            font-size: 12.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+            color: {AZUL}; margin: 10px 0 2px 0;
+        }}
+        .pregunta span {{ color: {GRIS_TEXTO}; font-weight: 600; text-transform: none; letter-spacing: 0; }}
+
         /* ---- Notas y cuidados ---- */
         .nota {{
             background-color: {GRIS_FONDO};
@@ -170,6 +177,11 @@ def encabezado_seccion(titulo, subtitulo=None):
 
 def respuesta(html):
     st.markdown(f'<div class="respuesta">{html}</div>', unsafe_allow_html=True)
+
+
+def pregunta(texto):
+    """Etiqueta con la pregunta que responde el grafico de abajo (la misma del notebook)."""
+    st.markdown(f'<div class="pregunta">Pregunta del gráfico · <span>{texto}</span></div>', unsafe_allow_html=True)
 
 
 def nota(html):
@@ -394,6 +406,7 @@ with t1:
     col_a, col_b = st.columns([1, 2])
 
     with col_a:
+        pregunta("¿Qué formato se califica mejor?")
         resumen = ud.resumen_formatos(df_f).dropna(subset=["calif_prom"]).rename_axis("content_type").reset_index()
         if not resumen.empty:
             fig_res = px.bar(
@@ -409,6 +422,7 @@ with t1:
             st.info("No hay títulos calificados con estos filtros.")
 
     with col_b:
+        pregunta("¿Ocurre todos los años?")
         por_anio = ud.calif_por_anio(df_f)
         if not por_anio.empty:
             fig_anio = px.line(
@@ -433,7 +447,7 @@ with t1:
         "de los 16 años. El eje vertical no parte de 0 porque aquí importa la distancia entre las líneas."
     )
 
-    with st.expander("¿Y si las series puntúan alto solo porque tienen pocos votos?"):
+    with st.expander("¿Y si las series puntúan alto solo porque tienen pocos votos? (¿es necesario fijar un mínimo de votos?)"):
         bv = ud.brecha_por_votos(df_catalogo)
         if not bv.empty:
             bv = bv.assign(exigencia=bv["votos_min"].map(etiqueta_votos))
@@ -493,6 +507,7 @@ with t2:
             nota("Para comparar formatos, deja Películas y Series activas en el filtro de tipo de contenido.")
 
         # Grafico A: nota por genero
+        pregunta("¿Ocurre en todos los géneros? (nota)")
         orden_g = (tg.groupby("genero")["calif_prom"].mean().sort_values(ascending=True).index.tolist())
         figa = px.bar(
             tg, x="calif_prom", y="genero", color="content_type", orientation="h", barmode="group",
@@ -511,6 +526,7 @@ with t2:
         st.caption("Cómo leerlo: barras más largas = mejor nota. Cada género tiene un par de barras para comparar.")
 
         # Grafico B: volumen por genero
+        pregunta("¿Qué géneros tienen más títulos en cada formato?")
         orden_v = (tg.groupby("genero")["titulos"].sum().sort_values(ascending=True).index.tolist())
         figb = px.bar(
             tg, x="titulos", y="genero", color="content_type", orientation="h", barmode="group",
@@ -537,6 +553,7 @@ with t2:
         "Cada burbuja es un género en un formato; su tamaño indica cuántos títulos hay detrás. "
         "Incluye todos los géneros con al menos 30 títulos.",
     )
+    pregunta("¿Qué géneros combinan buena nota y buena popularidad?")
     tp = ud.tabla_generos(df_f, solo_comparables=False)
     tp = tp[(tp["titulos"] >= 30) & (tp["genres"] != "Unknown")].dropna(subset=["calif_prom"])   # «Sin género» son datos faltantes, no un género
     tp = tp.assign(genero=tp["genres"].map(ud.es_genero))
@@ -608,6 +625,7 @@ with t3:
     else:
         nota("No hay suficientes títulos calificados para medir la relación con estos filtros.")
 
+    pregunta("¿Lo popular es también lo mejor evaluado?")
     dispersion = ud.calificados(df_f)
     if len(dispersion) > 0:
         fig_d = px.scatter(
@@ -658,8 +676,8 @@ with t3:
 # ---------------------------------------------------------------
 with t4:
     encabezado_seccion(
-        "¿De dónde viene el contenido y qué países destacan?",
-        "Series TV: los 10 países con más títulos, con su nota promedio. Más abajo, los idiomas.",
+        "¿De dónde vienen las Series mejor evaluadas?",
+        "Nota promedio de las series por país, comparada con un mínimo de votos para que sea confiable. Más abajo, los idiomas del catálogo.",
     )
     # Nota por pais usando solo series con 50+ votos; el minimo de series por pais baja si el filtro deja pocas
     min_t, pn = 100, pd.DataFrame()
@@ -671,6 +689,7 @@ with t4:
         st.info("Este gráfico analiza Series TV con 50+ votos. Activa “Serie TV” en «¿Qué quieres ver?» "
                 "y revisa que el mínimo de votos no deje muy pocos títulos.")
     else:
+        pregunta("¿De dónde vienen las Series mejor evaluadas?")
         vol = ud.tabla_paises_series(df_f, 10)
         a, b = pn.iloc[0], (pn.iloc[1] if len(pn) > 1 else None)
         mejores = (f"<b>{ud.es_pais(a['country'])}</b> ({num(a['nota'])})" +
@@ -719,6 +738,7 @@ with t4:
 
     st.markdown("---")
     encabezado_seccion("¿Qué idiomas tienen más presencia?", "Porcentaje de títulos por idioma original, en la selección actual.")
+    pregunta("¿En qué idiomas está el catálogo?")
     ti = ud.tabla_idiomas(df_f, 8)
     if not ti.empty:
         ti = ti.sort_values("porcentaje", ascending=True)
@@ -772,6 +792,7 @@ with t5:
                       help="Porcentaje de películas con ROI mayor a 1.")
 
             if not rg.empty:
+                pregunta("¿Qué géneros de películas devuelven más dinero?")
                 rg = rg.sort_values("roi_mediano", ascending=True).assign(
                     genero=lambda d: d["genres"].map(ud.es_genero))
                 fig_r = px.bar(
@@ -790,6 +811,7 @@ with t5:
                 st.caption("Cómo leerlo: barras más largas = más dinero recaudado por cada dólar invertido. "
                            "Solo géneros con al menos 60 películas con datos.")
 
+            pregunta("¿Más presupuesto trae más ingresos?")
             fig_s = px.scatter(
                 fin, x="budget", y="revenue", log_x=True, log_y=True, opacity=0.55,
                 hover_name="title",
@@ -903,6 +925,7 @@ with t6:
             f"bruto (sin marketing). Es una señal, no una garantía.",
         )
 
+    pregunta("¿Cómo elegir títulos mirando popularidad y nota a la vez?")
     st.markdown("**Ejemplo del indicador compuesto: los 5 mejores de cada formato** "
                 f"(mínimo {H['indice_votos']} votos)")
     top_idx = H["indice"]
@@ -973,7 +996,7 @@ with t8:
 with t7:
     encabezado_seccion(
         "Explorador del catálogo filtrado",
-        "La tabla detrás de los gráficos: ordenable y descargable. Respeta los filtros del panel lateral.",
+        "Pregunta que responde: ¿qué títulos hay detrás de cada cifra? Es la tabla de los gráficos: sirve para comprobar un dato, ordenar por cualquier columna (clic en el encabezado), buscar un título (ícono de lupa) y descargar la selección en CSV. Respeta los filtros del panel lateral.",
     )
     columnas_mostrar = {
         "title": "Título", "content_type": "Tipo", "release_year": "Año",
