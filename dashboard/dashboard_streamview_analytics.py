@@ -978,7 +978,8 @@ with t8:
         if st.button("Generar infografía con los filtros actuales", type="primary", key="ig_boton"):
             try:
                 fig_ig = ig.construir_infografia(df_f, df_catalogo, tipos_sel, anio_min, anio_max, votos_min,
-                                                 generos_sel, criterio=criterio_ig, titulo=titulo_ig)
+                                                 generos_sel, criterio=criterio_ig, titulo=titulo_ig,
+                                                 peliculas=df_movies)
                 informe_md = ig.construir_informe(df_f, df_catalogo, tipos_sel, anio_min, anio_max, votos_min,
                                                   generos_sel, criterio=criterio_ig, titulo=titulo_ig)
                 png_b, pdf_b = ig.exportar(fig_ig)
