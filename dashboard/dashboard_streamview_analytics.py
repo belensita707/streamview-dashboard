@@ -720,20 +720,32 @@ with t4:
         st.caption(f"Cómo leerlo: cada barra es la nota promedio de las series del país que tienen 50 votos o más; "
                    f"entre paréntesis, cuántas series cumplen eso. Solo aparecen países con {min_t}+ series así.")
 
-        with st.expander("¿Por qué se exige un mínimo de votos para comparar países?"):
-            tv = vol.merge(ud.paises_nota_50(df_f, 0)[["country", "nota"]], on="country", how="left")
+        with st.expander("¿Por qué se exige un mínimo de votos? ¿Y por qué un país con menos series puede tener mejor nota?"):
+            # Siempre sobre el catalogo completo: asi "sin minimo" y "50+ votos" se pueden comparar de verdad
+            vol_cat = ud.tabla_paises_series(df_catalogo, 10)
+            nota50 = ud.paises_nota_50(df_catalogo, 0)[["country", "nota", "error"]]
+            tv = vol_cat.merge(nota50, on="country", how="left")
             tv = tv.assign(**{
                 "País": tv["country"].map(ud.es_pais),
                 "Series (total)": tv["titulos"].map(miles),
                 "Series con 50+ votos": tv["titulos_50_votos"].map(miles),
                 "Nota prom. (sin mínimo)": tv["calif_prom"].map(num),
                 "Nota prom. (50+ votos)": tv["nota"].map(num),
-            })[["País", "Series (total)", "Series con 50+ votos", "Nota prom. (sin mínimo)", "Nota prom. (50+ votos)"]]
+                "Margen de error (±)": tv["error"].map(num),
+            })[["País", "Series (total)", "Series con 50+ votos", "Nota prom. (sin mínimo)",
+                "Nota prom. (50+ votos)", "Margen de error (±)"]]
             st.dataframe(tv, hide_index=True, use_container_width=True)
             st.markdown(
-                "Muchas series de un país tienen muy pocos votos, y esas notas son ruido: bajan o suben el promedio "
-                "sin que signifique nada. Al exigir 50+ votos cambia el orden de los países (por ejemplo, Corea del Sur "
-                "sube). Por eso **la comparación entre países se hace siempre con ese mínimo**."
+                "**1. Por qué el mínimo de votos.** Muchas series de un país tienen muy pocos votos, y esas notas son "
+                "ruido: bajan o suben el promedio sin que signifique nada. Al exigir 50+ votos cambia el orden de los "
+                "países, así que **la comparación entre países se hace siempre con ese mínimo**.\n\n"
+                "**2. Por qué un país con menos series puede tener mejor nota.** La cantidad de títulos y su nota "
+                "miden cosas distintas: un país puede tener muchas series y una nota media, o pocas y una nota alta. "
+                "Lo que sí importa es que haya **suficientes series con votos** para que el promedio sea confiable. "
+                "El **margen de error** de la última columna lo muestra: es cuánto puede moverse el promedio por azar. "
+                "Con cientos de series es pequeño (unas pocas centésimas) y con pocas series (como China) es grande. "
+                "Por eso se comparan solo países con 100+ series con 50+ votos.\n\n"
+                "*Tabla calculada sobre el catálogo completo, sin filtros.*"
             )
 
     st.markdown("---")
