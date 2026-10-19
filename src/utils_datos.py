@@ -43,6 +43,7 @@ GENEROS_ES = {
     "Talk": "Talk show", "Soap": "Telenovela", "TV Movie": "Película para TV",
     "Music": "Música", "War": "Bélica", "War & Politics": "Guerra y Política",
     "News": "Noticias", "Unknown": "Sin género",
+    "Horror": "Terror", "Thriller": "Suspenso", "Romance": "Romance", "Reality": "Reality",
 }
 PAISES_ES = {
     "United States of America": "Estados Unidos", "Japan": "Japón", "United Kingdom": "Reino Unido",
@@ -272,6 +273,29 @@ def tabla_paises_series(df, n=10):
     return t.sort_values("titulos", ascending=False).head(n)
 
 
+def paises_nota_50(df, min_titulos=100):
+    """Series: nota promedio por pais usando solo titulos con 50+ votos.
+    Solo entran paises con al menos 'min_titulos' series con 50+ votos (si no, la nota no es comparable).
+    Devuelve tabla ordenada de mayor a menor nota."""
+    s = calificados(df[df["content_type"] == "Serie TV"])
+    s = s[s["vote_count"] >= 50]
+    cols = ["country", "titulos", "nota"]
+    if s.empty:
+        return pd.DataFrame(columns=cols)
+    x = explode_columna(s, "country")
+    t = (x.groupby("country").agg(titulos=("id_unico", "nunique"), nota=("vote_average", "mean"))
+         .reset_index())
+    return t[t["titulos"] >= min_titulos].sort_values("nota", ascending=False).reset_index(drop=True)
+
+
+def correlacion_por_formato(df, votos_min=50):
+    """Spearman dentro de cada formato (con votos_min o mas votos). Devuelve {'Película': (rho, n), 'Serie TV': (rho, n)}."""
+    out = {}
+    for f in ("Película", "Serie TV"):
+        out[f] = correlacion_pop_calif(df[(df["content_type"] == f) & (df["vote_count"] >= votos_min)])
+    return out
+
+
 def tabla_idiomas(df, n=8):
     v = df["language"].value_counts(normalize=True).head(n) * 100
     t = pd.DataFrame({"language": v.index, "porcentaje": v.values})
@@ -326,7 +350,7 @@ CRITERIOS_RANKING = {
 }
 
 
-def ranking_titulos(df, criterio="indice", n=10, votos_min=50):
+def ranking_titulos(df, criterio="indice", n=10, votos_min=50, por_formato=False):
     """Los n mejores titulos del segmento, ordenados de mayor a menor.
 
     Solo entran titulos con calificacion real y al menos 'votos_min' votos (una nota basada en
@@ -358,6 +382,11 @@ def ranking_titulos(df, criterio="indice", n=10, votos_min=50):
         e = e.sort_values("indice", ascending=False)
     cols = ["title", "content_type", "release_year", "popularity", "vote_average",
             "vote_count", "indice", "valor"]
+    if por_formato and e["content_type"].nunique() == 2:
+        # Los n/2 mejores de cada formato (Series primero), con el indice calculado sobre TODO el segmento
+        # para que las barras de Series y Peliculas sean comparables.
+        e = pd.concat([e[e["content_type"] == f].head(n // 2) for f in ("Serie TV", "Película")])
+        return e[cols].reset_index(drop=True), usado
     return e.head(n)[cols].reset_index(drop=True), usado
 
 
@@ -373,24 +402,34 @@ def fila(tabla, columna, valor):
 
 
 def hallazgos(df, df_peliculas):
+    """Cifras de la pestana 'Que decidir' (siempre sobre el catalogo completo). Mismas reglas que el notebook."""
     h = {"kpis": kpis(df), "brecha_votos": brecha_por_votos(df)}
-    h["rho_todos"], _ = correlacion_pop_calif(df)
-    h["rho_50"], _ = correlacion_pop_calif(df[df["vote_count"] >= 50])
 
-    ts = tabla_generos(df[df["content_type"] == "Serie TV"], solo_comparables=False)
-    h["series_generos"] = ts[ts["titulos"] >= 150].sort_values("calif_prom", ascending=False)
+    # 1) Series vs Peliculas: anios y generos comparables donde ganan las Series
+    pa = calif_por_anio(df).pivot(index="release_year", columns="content_type", values="calif_prom").dropna()
+    h["anios_total"] = int(len(pa))
+    h["anios_series"] = int((pa["Serie TV"] > pa["Película"]).sum())
+    tg = tabla_generos(df, solo_comparables=True)
+    pv = tg.pivot(index="genres", columns="content_type", values="calif_prom").dropna()
+    h["generos_total"] = int(len(pv))
+    h["generos_series"] = int((pv["Serie TV"] > pv["Película"]).sum())
 
-    tp = tabla_generos(df[df["content_type"] == "Película"], solo_comparables=False)
-    h["pel_generos"] = tp[tp["titulos"] >= 100].sort_values("calif_prom", ascending=False)
-    h["pop_mediana_peliculas"] = float(df.loc[df["content_type"] == "Película", "popularity"].median())
+    # 2) Generos comparables con mejor nota en Series
+    h["series_top_generos"] = pv["Serie TV"].sort_values(ascending=False).head(2)
 
-    h["paises"] = tabla_paises_series(df, 10)
+    # 3) Popularidad vs nota dentro de cada formato (50+ votos) e indice combinado por formato
+    cf = correlacion_por_formato(df, 50)
+    h["rho_pel50"], h["rho_ser50"] = cf["Película"][0], cf["Serie TV"][0]
+    h["indice"], h["indice_votos"] = ranking_titulos(df, "indice", n=10, votos_min=50, por_formato=True)
 
+    # 4) Paises (Series, 50+ votos, al menos 100 series con ese minimo)
+    h["paises"] = paises_nota_50(df, 100)
+    h["paises_vol"] = tabla_paises_series(df, 10)
+
+    # 5) Finanzas (apoyo)
     ids_pel = df.loc[df["content_type"] == "Película", "id_unico"]
     fin = datos_financieros(df_peliculas, ids=ids_pel)
-    h["fin"] = fin
     h["fin_cobertura"] = float(len(fin) / max(len(ids_pel), 1))
     h["roi_global"] = float(fin["roi"].median()) if len(fin) else None
-    h["roi_generos"] = roi_por_genero(fin, 80)
+    h["roi_generos"] = roi_por_genero(fin, 100)
     return h
-
