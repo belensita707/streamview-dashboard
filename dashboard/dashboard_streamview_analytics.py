@@ -258,8 +258,10 @@ votos_min = st.sidebar.select_slider(
 generos_disponibles = sorted(ud.explode_columna(df_catalogo, "genres")["genres"].dropna().unique())
 generos_sel = st.sidebar.multiselect(
     "Géneros (vacío = todos)", options=generos_disponibles, default=[],
-    format_func=ud.es_genero,
-    help="Al elegir uno o más géneros, todo se recalcula solo con esos títulos.",
+    format_func=ud.etiqueta_genero,
+    help=("Al elegir uno o más géneros, todo se recalcula solo con esos títulos. "
+          "★ = género que existe en Películas y en Series (los 8 que se pueden comparar entre formatos). "
+          "Los demás son de un solo formato, por ejemplo «Acción y Aventura» (Series) o «Acción» (Películas)."),
 )
 
 with st.sidebar.expander("Glosario (en simple)"):
