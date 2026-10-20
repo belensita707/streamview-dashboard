@@ -376,7 +376,7 @@ def _bloque_dinero(cv, x, y, w, h, df, peliculas, generos=()):
                 fontsize=9.5, color=TEXTO, va="center", linespacing=1.3)
         return
     roi_med = float(fin["roi"].median())
-    cv.text(x + 0.016, y + h - 0.043, "Este segmento, por cada $1" if generos else "Por cada $1 invertido", fontsize=11, fontweight="bold", color=NEGRO, va="center")
+    cv.text(x + 0.016, y + h - 0.043, "Este segmento" if generos else "Por cada $1 invertido", fontsize=11, fontweight="bold", color=NEGRO, va="center")
     cv.text(x + w - 0.016, y + h - 0.043, f"vuelven ${_num(roi_med, 1)}", fontsize=11.5, color=AZUL, va="center",
             ha="right", fontweight="bold")
     if generos:
@@ -396,7 +396,9 @@ def _bloque_dinero(cv, x, y, w, h, df, peliculas, generos=()):
             cv.text(x + w - 0.016, y + h - 0.0615, f"vuelven ${_num(r['roi_mediano'], 1)}", fontsize=11.5,
                     color=AZUL, va="center", ha="right", fontweight="bold")
     pct = len(fin) / max(len(pel), 1) * 100
-    cv.text(x + 0.016, y + 0.010, f"Solo el {_num(pct, 0)}% de las películas informa su dinero.",
+    texto_pie = (f"Por cada $1 invertido. Solo el {_num(pct, 0)}% informa su dinero." if generos
+                 else f"Solo el {_num(pct, 0)}% de las películas informa su dinero.")
+    cv.text(x + 0.016, y + 0.010, texto_pie,
             fontsize=7.5, color=GRIS_TEXTO, va="center", style="italic")
 
 
