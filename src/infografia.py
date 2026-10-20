@@ -358,7 +358,7 @@ def _bloque_paises(cv, x, y, w, h, df):
                 fontweight="bold")
 
 
-def _bloque_dinero(cv, x, y, w, h, df, peliculas):
+def _bloque_dinero(cv, x, y, w, h, df, peliculas, generos=()):
     """Franja: cuanto devuelve cada dolar invertido en las peliculas que informan presupuesto e ingresos."""
     cv.add_patch(Rectangle((x, y), w, h, facecolor=BLANCO, edgecolor=GRIS_LINEA, lw=0.8))
     cv.add_patch(Rectangle((x, y + h - 0.005), w, 0.005, color=AMARILLO, lw=0))
@@ -366,22 +366,35 @@ def _bloque_dinero(cv, x, y, w, h, df, peliculas):
             color=GRIS_TEXTO, va="center")
     ids = df.loc[df["content_type"] == "Película", "id_unico"]
     pel = peliculas[peliculas["id_unico"].isin(set(ids))] if peliculas is not None else peliculas
+    if len(ids) == 0:
+        cv.text(x + 0.016, y + h * 0.40, "Este segmento no incluye películas.",
+                fontsize=9.5, color=TEXTO, va="center")
+        return
     fin = ud.datos_financieros(pel) if pel is not None else None
     if fin is None or len(fin) < MIN_PEL_FINANZAS:
         cv.text(x + 0.016, y + h * 0.40, "Pocas películas informan presupuesto\ne ingresos en este segmento.",
                 fontsize=9.5, color=TEXTO, va="center", linespacing=1.3)
         return
     roi_med = float(fin["roi"].median())
-    cv.text(x + 0.016, y + h - 0.043, "Por cada $1 invertido", fontsize=11, fontweight="bold", color=NEGRO, va="center")
+    cv.text(x + 0.016, y + h - 0.043, "Este segmento, por cada $1" if generos else "Por cada $1 invertido", fontsize=11, fontweight="bold", color=NEGRO, va="center")
     cv.text(x + w - 0.016, y + h - 0.043, f"vuelven ${_num(roi_med, 1)}", fontsize=11.5, color=AZUL, va="center",
             ha="right", fontweight="bold")
-    g = ud.roi_por_genero(fin, min_n=MIN_PEL_GENERO)
-    if len(g):
-        r = g.iloc[0]
-        cv.text(x + 0.016, y + h - 0.0615, f"Mejor género: {_recorta(ud.es_genero(r['genres']), 14)}",
-                fontsize=11, fontweight="bold", color=NEGRO, va="center")
-        cv.text(x + w - 0.016, y + h - 0.0615, f"vuelven ${_num(r['roi_mediano'], 1)}", fontsize=11.5, color=AZUL,
-                va="center", ha="right", fontweight="bold")
+    if generos:
+        # con un genero filtrado, "mejor genero" no tiene sentido: se compara con todo el catalogo
+        fin_cat = ud.datos_financieros(peliculas) if peliculas is not None else None
+        if fin_cat is not None and len(fin_cat):
+            cv.text(x + 0.016, y + h - 0.0615, "Todo el catálogo", fontsize=11, fontweight="bold", color=NEGRO,
+                    va="center")
+            cv.text(x + w - 0.016, y + h - 0.0615, f"vuelven ${_num(float(fin_cat['roi'].median()), 1)}",
+                    fontsize=11.5, color=AZUL, va="center", ha="right", fontweight="bold")
+    else:
+        g = ud.roi_por_genero(fin, min_n=MIN_PEL_GENERO)
+        if len(g):
+            r = g.iloc[0]
+            cv.text(x + 0.016, y + h - 0.0615, f"Mejor género: {_recorta(ud.es_genero(r['genres']), 14)}",
+                    fontsize=11, fontweight="bold", color=NEGRO, va="center")
+            cv.text(x + w - 0.016, y + h - 0.0615, f"vuelven ${_num(r['roi_mediano'], 1)}", fontsize=11.5,
+                    color=AZUL, va="center", ha="right", fontweight="bold")
     pct = len(fin) / max(len(pel), 1) * 100
     cv.text(x + 0.016, y + 0.010, f"Solo el {_num(pct, 0)}% de las películas informa su dinero.",
             fontsize=7.5, color=GRIS_TEXTO, va="center", style="italic")
@@ -513,7 +526,7 @@ def construir_infografia(df, catalogo, tipos, anio_min, anio_max, votos_min, gen
     y_f = 0.062
     alto_f = 0.092
     _bloque_paises(cv, 0.05, y_f, 0.4425, alto_f, df)
-    _bloque_dinero(cv, 0.5075, y_f, 0.4425, alto_f, df, peliculas)
+    _bloque_dinero(cv, 0.5075, y_f, 0.4425, alto_f, df, peliculas, generos)
 
     # ---------- Pie ----------
     cv.text(0.05, 0.033, f"Fuente: StreamView Analytics · catálogo de {_miles(n_cat)} títulos (2010–2025).",
