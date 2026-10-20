@@ -65,6 +65,11 @@ def es_genero(g):
     return GENEROS_ES.get(g, g)
 
 
+def etiqueta_genero(g):
+    """Nombre en español; los 8 generos comparables (existen en Peliculas y en Series) llevan una estrella."""
+    return es_genero(g) + (" ★" if g in GENEROS_COMPARABLES else "")
+
+
 def es_pais(p):
     return PAISES_ES.get(p, p)
 
