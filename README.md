@@ -83,7 +83,9 @@ Cada pestaña empieza con la **respuesta corta** (caja amarilla) y cada gráfico
 
 ### La infografía
 
-La pestaña 7 convierte el segmento filtrado en una hoja A4: título, cifras comparadas con el catálogo completo, ranking, gráficos de apoyo, hallazgos, una franja con los **mejores países para series** y el **retorno de las películas**, y una recomendación. Si el segmento incluye Series y Películas, el ranking muestra **los 5 mejores de cada formato** para poder compararlos.
+La pestaña 7 convierte el segmento filtrado en una hoja A4 pensada para leerse en segundos, de arriba hacia abajo: título, **qué hacer** (una palabra de acción y una frase), tres cifras comparadas con el catálogo, los **3 títulos más destacados de cada formato**, uno o dos gráficos, dos frases con lo más importante y dos franjas: los **3 mejores países para series** y **cuánto devuelve cada $1 invertido en películas**. No incluye definiciones técnicas (correlación, margen de error, índice): esas se explican en las pestañas del dashboard.
+
+En el filtro de géneros, los **8 géneros comparables** llevan una **★** (existen en Películas y en Series). Los demás pertenecen a un solo formato.
 
 ![Infografía de ejemplo: todo el catálogo](images/infografia_ejemplo_catalogo.png)
 
