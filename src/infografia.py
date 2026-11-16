@@ -65,13 +65,16 @@ def _parrafo(texto, ancho):
 # ------------------------------------------------------------------
 # Titulo y descripcion del segmento
 # ------------------------------------------------------------------
-def describir_filtros(tipos, anio_min, anio_max, votos_min, generos):
+def describir_filtros(tipos, anio_min, anio_max, votos_min, generos, paises=None):
     partes = []
     if len(tipos) == 1:
         partes.append("Series TV" if tipos[0] == "Serie TV" else "Películas")
     if generos:
         nombres = [ud.es_genero(g) for g in generos]
         partes.append(", ".join(nombres[:3]) + (f" +{len(nombres) - 3}" if len(nombres) > 3 else ""))
+    if paises:
+        nombres = [ud.es_pais(p) for p in paises]
+        partes.append(", ".join(nombres[:2]) + (f" +{len(nombres) - 2}" if len(nombres) > 2 else ""))
     if (anio_min, anio_max) != (2010, 2025):
         partes.append(f"{anio_min}–{anio_max}" if anio_min != anio_max else str(anio_min))
     if votos_min > 0:
@@ -124,7 +127,7 @@ MIN_CALIFICADOS_REC = 30      # con menos titulos calificados la lectura es solo
 UMBRAL_NOTA = 0.15            # puntos de nota sobre/bajo el catalogo para decir "alta" o "baja"
 UMBRAL_POP_ALTA = 1.15        # popularidad mediana del segmento / la del catalogo
 UMBRAL_POP_BAJA = 0.85
-MIN_SERIES_PAIS = 50          # series con 50+ votos que debe tener un pais para entrar a la franja
+MIN_SERIES_PAIS = ud.MIN_TITULOS_GRUPO   # series con 50+ votos que debe tener un pais (100, igual que en la pestana 4)
 MIN_PEL_FINANZAS = 30         # peliculas con presupuesto e ingresos para mostrar el retorno
 MIN_PEL_GENERO = 60           # idem, por genero
 
@@ -312,10 +315,15 @@ def _generos_top(fig, df, rect):
     ax = fig.add_axes(rect)
     _estilo_ejes(ax)
     ax.spines["left"].set_visible(False)
-    x = ud.explode_columna(df, "genres")
-    t = (ud.calificados(x).groupby("genres")
-         .agg(titulos=("id_unico", "nunique"), nota=("vote_average", "mean")).reset_index())
+    x = ud.calificados(ud.explode_columna(df, "genres"))
+    # Mismo criterio de confiabilidad que las recomendaciones: solo titulos con 50+ votos,
+    # salvo que el segmento sea tan chico que no queden generos para mostrar
+    x50 = x[x["vote_count"] >= 50]
+    t = (x50.groupby("genres").agg(titulos=("id_unico", "nunique"), nota=("vote_average", "mean")).reset_index())
     t = t[t["titulos"] >= 30]
+    if len(t) < 2:
+        t = (x.groupby("genres").agg(titulos=("id_unico", "nunique"), nota=("vote_average", "mean")).reset_index())
+        t = t[t["titulos"] >= 30]
     if df["content_type"].nunique() == 2:
         # con Series y Peliculas juntas solo se comparan los generos que existen en ambos formatos
         # (los mismos 8 de la pestana Generos); si no, los generos propios de las series inflarian la nota
@@ -339,13 +347,17 @@ def _generos_top(fig, df, rect):
     return "Géneros mejor evaluados"
 
 
-def _bloque_paises(cv, x, y, w, h, df):
-    """Franja: 3 mejores paises para series (nota con 50+ votos). Se avisa si no hay series suficientes."""
+def _bloque_paises(cv, x, y, w, h, df, paises=None):
+    """Franja: 3 mejores paises para series (nota con 50+ votos). Se avisa si no hay series suficientes.
+    Si el usuario filtro paises, solo se ordenan esos (las coproducciones traen otros paises que no se eligieron)."""
     cv.add_patch(Rectangle((x, y), w, h, facecolor=BLANCO, edgecolor=GRIS_LINEA, lw=0.8))
     cv.add_patch(Rectangle((x, y + h - 0.005), w, 0.005, color=AMARILLO, lw=0))
-    cv.text(x + 0.016, y + h - 0.019, "MEJORES PAÍSES · SERIES", fontsize=8.5, fontweight="bold",
-            color=GRIS_TEXTO, va="center")
-    t = ud.paises_nota_50(df, min_titulos=MIN_SERIES_PAIS).head(3)
+    cv.text(x + 0.016, y + h - 0.019, "PAÍSES ELEGIDOS · SERIES" if paises else "MEJORES PAÍSES · SERIES",
+            fontsize=8.5, fontweight="bold", color=GRIS_TEXTO, va="center")
+    t = ud.paises_nota_50(df, min_titulos=MIN_SERIES_PAIS)
+    if paises:
+        t = t[t["country"].isin(paises)]
+    t = t.head(3)
     if t.empty:
         cv.text(x + 0.016, y + h * 0.40, "Este segmento no tiene series\nsuficientes para comparar países.",
                 fontsize=9.5, color=TEXTO, va="center", linespacing=1.3)
@@ -406,11 +418,13 @@ def _hallazgos_cortos(df, catalogo, generos):
     """Dos frases cortas para la infografia, sin terminos tecnicos."""
     c = ud.calificados(df)
     out = []
-    por_formato = c.groupby("content_type")["vote_average"].agg(["mean", "size"])
+    # Series vs Peliculas con el umbral de las recomendaciones (50+ votos), si alcanza la muestra
+    c50 = c[c["vote_count"] >= 50]
+    por_formato = c50.groupby("content_type")["vote_average"].agg(["mean", "size"])
     if {"Película", "Serie TV"} <= set(por_formato.index) and (por_formato["size"] >= 30).all():
         ps, pp = por_formato.loc["Serie TV", "mean"], por_formato.loc["Película", "mean"]
-        out.append(f"{'Las Series' if ps >= pp else 'Las Películas'} tienen {_num(abs(ps - pp))} puntos "
-                   f"más de nota que {'las Películas' if ps >= pp else 'las Series'}.")
+        out.append(f"Con 50+ votos, {'las Series' if ps >= pp else 'las Películas'} tienen {_num(abs(ps - pp))} "
+                   f"puntos más de nota que {'las Películas' if ps >= pp else 'las Series'}.")
     else:
         por_anio = c.groupby("release_year")["vote_average"].agg(["mean", "size"])
         por_anio = por_anio[por_anio["size"] >= 10]
@@ -434,7 +448,7 @@ def _hallazgos_cortos(df, catalogo, generos):
 # Funcion principal
 # ------------------------------------------------------------------
 def construir_infografia(df, catalogo, tipos, anio_min, anio_max, votos_min, generos,
-                         criterio="indice", titulo=None, peliculas=None):
+                         criterio="indice", titulo=None, peliculas=None, paises=None):
     """Arma la figura (A4). 'df' es el catalogo YA filtrado; 'catalogo' es el completo (para comparar).
     'peliculas' (opcional) es la tabla de peliculas con budget y revenue, para la franja de dinero.
 
@@ -454,7 +468,7 @@ def construir_infografia(df, catalogo, tipos, anio_min, anio_max, votos_min, gen
     cv.axis("off")
 
     # ---------- 1. Titulo + una linea de introduccion ----------
-    partes = describir_filtros(tipos, anio_min, anio_max, votos_min, generos)
+    partes = describir_filtros(tipos, anio_min, anio_max, votos_min, generos, paises)
     titulo_auto = " · ".join(partes) if partes else "Todo el catálogo"
     titulo_final = (titulo or "").strip() or titulo_auto
     n, n_cat = len(df), len(catalogo)
@@ -527,7 +541,7 @@ def construir_infografia(df, catalogo, tipos, anio_min, anio_max, votos_min, gen
     # ---------- 7. Paises y dinero ----------
     y_f = 0.062
     alto_f = 0.092
-    _bloque_paises(cv, 0.05, y_f, 0.4425, alto_f, df)
+    _bloque_paises(cv, 0.05, y_f, 0.4425, alto_f, df, paises)
     _bloque_dinero(cv, 0.5075, y_f, 0.4425, alto_f, df, peliculas, generos)
 
     # ---------- Pie ----------
@@ -554,7 +568,8 @@ def _perfil_segmento(df, generos=()):
     return out
 
 
-def construir_informe(df, catalogo, tipos, anio_min, anio_max, votos_min, generos, criterio="indice", titulo=None):
+def construir_informe(df, catalogo, tipos, anio_min, anio_max, votos_min, generos, criterio="indice", titulo=None,
+                      paises=None):
     """Informe breve (Markdown) del segmento filtrado: mismos datos que la infografia.
 
     Orden fijo: resumen -> 1 segmento analizado -> 2 cifras clave -> 3 hallazgos -> 4 ranking ->
@@ -563,7 +578,7 @@ def construir_informe(df, catalogo, tipos, anio_min, anio_max, votos_min, genero
     if df.empty or len(ud.calificados(df)) < 5:
         raise ValueError("Hay muy pocos títulos calificados con estos filtros (mínimo 5). "
                          "Amplía el rango de años o quita algún filtro.")
-    partes = describir_filtros(tipos, anio_min, anio_max, votos_min, generos)
+    partes = describir_filtros(tipos, anio_min, anio_max, votos_min, generos, paises)
     nombre = (titulo or "").strip() or (" · ".join(partes) if partes else "Todo el catálogo")
     base = max(votos_min, 100 if criterio == "nota" else 50)
     ranking, usados = ud.ranking_titulos(df, criterio=criterio, n=10, votos_min=base, por_formato=True)
@@ -577,6 +592,7 @@ def construir_informe(df, catalogo, tipos, anio_min, anio_max, votos_min, genero
     diag = diagnosticar(df, catalogo)
     formato = ", ".join("Series TV" if t == "Serie TV" else "Películas" for t in tipos) if tipos else "todos"
     generos_txt = ", ".join(ud.es_genero(g) for g in generos) if generos else "todos"
+    paises_txt = ", ".join(ud.es_pais(p) for p in paises) if paises else "todos"
 
     L = [f"# Informe del segmento: {nombre}", "",
          "*StreamView Analytics · generado desde el dashboard con los filtros activos*", "",
@@ -589,6 +605,7 @@ def construir_informe(df, catalogo, tipos, anio_min, anio_max, votos_min, genero
          f"| Años de lanzamiento | {anio_min}–{anio_max} |",
          f"| Votos mínimos | {votos_min} |",
          f"| Géneros | {generos_txt} |",
+         f"| Países de producción | {paises_txt} |",
          f"| Ranking ordenado por | {ETIQUETA_CRITERIO[criterio]} |", "",
          "## 2. Cifras clave", "",
          "| Indicador | Segmento | Catálogo completo | Diferencia |", "|---|---|---|---|",

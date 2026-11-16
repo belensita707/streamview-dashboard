@@ -14,7 +14,8 @@ StreamView administra un catálogo de **31.991 títulos** (16.000 películas y 1
 
 | Hallazgo | Evidencia |
 |---|---|
-| Las Series puntúan más que las Películas | 7,03 vs. 6,31 sobre 10 (+0,72). Ganan en los 16 años y en los 8 géneros comparables. Con 50+ votos la ventaja sube a +1,13. |
+| Las Series puntúan más que las Películas | Con 50+ votos por título (el mismo umbral que se exige a los países): 7,52 vs. 6,39 sobre 10 (+1,13). Ganan en los 16 años y en los 8 géneros comparables. Sin mínimo de votos la ventaja es +0,72. |
+| Dentro de las Series, Animación y Familia son los géneros mejor evaluados | Con 50+ votos y al menos 100 series por género: Animación 7,79 (784 series) y Familia 7,61 (219 series). |
 | Popularidad y nota se relacionan solo en parte | Dentro de cada formato (50+ votos): ρ = 0,24 en Películas y 0,25 en Series. |
 | Entre los países, la nota solo es comparable con votos suficientes | Con 50+ votos y 100+ series: Corea del Sur 7,94 y Japón 7,85. China tiene 1.900 series, pero solo 39 con 50+ votos. |
 | En películas, el retorno cuenta una historia distinta a la nota | Terror: ROI mediano 2,5× frente a 1,8× de la película típica (solo 21% de las películas informa presupuesto e ingresos). |
@@ -64,7 +65,7 @@ El dashboard **busca solo la carpeta `data/`**, así que se puede lanzar desde c
 
 ## 4. El dashboard
 
-**Filtros** (panel izquierdo y selector superior): formato, año de lanzamiento, mínimo de votos y género. Todo se recalcula con ellos, salvo la pestaña 6.
+**Filtros** (panel izquierdo y selector superior): formato, año de lanzamiento, mínimo de votos, género y país de producción. Todo se recalcula con ellos, salvo la pestaña 6. Con uno o más países elegidos, la pestaña 4 compara solo esos países y marca cuáles tienen series suficientes (100+ con 50+ votos).
 
 **KPIs** (se recalculan con los filtros): títulos, calificación de Películas, calificación de Series, diferencia entre ambas y popularidad Series ÷ Películas.
 
@@ -96,7 +97,7 @@ En el filtro de géneros, los **8 géneros comparables** llevan una **★** (exi
 - **Colores de Duoc UC, un solo significado cada uno:** amarillo `#FCB426` = Películas, azul oscuro `#00263E` = Series TV, negro = solo texto.
 - **Respuesta antes que evidencia:** los títulos comunican el hallazgo, no el tema del gráfico.
 - **Popularidad con mediana y relación con Spearman (por rangos):** unos pocos títulos extremos no deben mandar sobre el resto.
-- **Mínimo de votos:** una nota con pocos votos es poco confiable. Se exige 50+ votos al comparar países, rankings y relaciones.
+- **Mínimo de votos:** una nota con pocos votos es poco confiable (la mitad de las series calificadas tiene menos de 10). Se exige 50+ votos a todo lo que se recomienda: Series vs. Películas, géneros, países, rankings y relaciones. Para comparar un grupo (país o género) se exigen además 100+ títulos con ese mínimo. Las constantes están en `src/utils_datos.py` (`VOTOS_CONFIABLE`, `MIN_TITULOS_GRUPO`).
 
 ---
 

@@ -25,6 +25,11 @@ GENEROS_COMPARABLES = ["Drama", "Comedy", "Animation", "Crime", "Family", "Myste
 # Presupuesto e ingresos menores a este monto se descartan (valores simbolicos que dan ROI absurdos)
 UMBRAL_FINANCIERO = 100_000
 
+# Umbral de confiabilidad de la nota: el mismo para paises, generos, rankings y la recomendacion de Series
+VOTOS_CONFIABLE = 50
+# Minimo de titulos (con 50+ votos) para comparar un grupo: pais o genero
+MIN_TITULOS_GRUPO = 100
+
 COLUMNAS_COMUNES = [
     "id_unico", "show_id", "content_type", "title", "director", "cast", "country",
     "release_year", "genres", "language", "description",
@@ -52,6 +57,15 @@ PAISES_ES = {
     "Philippines": "Filipinas", "Brazil": "Brasil", "Russia": "Rusia", "Turkey": "Turquía",
     "Sweden": "Suecia", "Thailand": "Tailandia", "Denmark": "Dinamarca",
     "Netherlands": "Países Bajos", "Poland": "Polonia", "Ireland": "Irlanda",
+    "Hong Kong": "Hong Kong", "Australia": "Australia", "India": "India", "Argentina": "Argentina",
+    "Colombia": "Colombia", "Chile": "Chile", "Taiwan": "Taiwán", "Norway": "Noruega",
+    "Finland": "Finlandia", "Switzerland": "Suiza", "Austria": "Austria", "New Zealand": "Nueva Zelanda",
+    "South Africa": "Sudáfrica", "Indonesia": "Indonesia", "Israel": "Israel", "Egypt": "Egipto",
+    "Portugal": "Portugal", "Greece": "Grecia", "Czech Republic": "República Checa",
+    "Hungary": "Hungría", "Romania": "Rumania", "Ukraine": "Ucrania", "Nigeria": "Nigeria",
+    "Singapore": "Singapur", "Malaysia": "Malasia", "Vietnam": "Vietnam", "Peru": "Perú",
+    "Iran": "Irán", "Saudi Arabia": "Arabia Saudita", "United Arab Emirates": "Emiratos Árabes Unidos",
+    "Lebanon": "Líbano", "Morocco": "Marruecos", "Iceland": "Islandia", "Luxembourg": "Luxemburgo",
 }
 IDIOMAS_ES = {
     "en": "Inglés", "zh": "Chino", "ja": "Japonés", "ko": "Coreano", "es": "Español",
@@ -131,19 +145,33 @@ def explode_columna(df, columna):
     return d[d[columna] != ""]
 
 
-def aplicar_filtros(df, tipos, anio_min, anio_max, votos_min, generos=None):
-    """Filtros del panel lateral. El genero se compara de forma exacta
-    (asi 'Action' no arrastra a 'Action & Adventure')."""
+def _contiene_alguno(serie, elegidos):
+    """True si la lista separada por comas de cada fila contiene al menos uno de 'elegidos' (comparacion exacta)."""
+    elegidos = set(elegidos)
+    listas = serie.fillna("").str.split(", ")
+    return listas.apply(lambda lst: not elegidos.isdisjoint(x.strip() for x in lst))
+
+
+def aplicar_filtros(df, tipos, anio_min, anio_max, votos_min, generos=None, paises=None):
+    """Filtros del panel lateral. Genero y pais se comparan de forma exacta
+    (asi 'Action' no arrastra a 'Action & Adventure'). Un titulo con varios paises
+    entra si al menos uno de ellos esta entre los elegidos (coproducciones)."""
     out = df[
         df["content_type"].isin(tipos)
         & df["release_year"].between(anio_min, anio_max)
         & (df["vote_count"] >= votos_min)
     ].copy()
     if generos:
-        elegidos = set(generos)
-        listas = out["genres"].fillna("").str.split(", ")
-        out = out[listas.apply(lambda lst: not elegidos.isdisjoint(lst))]
+        out = out[_contiene_alguno(out["genres"], generos)]
+    if paises:
+        out = out[_contiene_alguno(out["country"], paises)]
     return out
+
+
+def paises_por_volumen(df):
+    """Lista de paises ordenada de mayor a menor cantidad de titulos (para el filtro del panel)."""
+    x = explode_columna(df, "country")
+    return x.groupby("country")["id_unico"].nunique().sort_values(ascending=False)
 
 
 def calificados(df):
@@ -412,20 +440,32 @@ def fila(tabla, columna, valor):
 
 
 def hallazgos(df, df_peliculas):
-    """Cifras de la pestana 'Que decidir' (siempre sobre el catalogo completo). Mismas reglas que el notebook."""
-    h = {"kpis": kpis(df), "brecha_votos": brecha_por_votos(df)}
+    """Cifras de la pestana 'Que decidir' (siempre sobre el catalogo completo). Mismas reglas que el notebook.
 
-    # 1) Series vs Peliculas: anios y generos comparables donde ganan las Series
-    pa = calif_por_anio(df).pivot(index="release_year", columns="content_type", values="calif_prom").dropna()
+    Las recomendaciones 1 y 2 (Series y sus generos) usan el MISMO umbral de confiabilidad que la
+    comparacion de paises: 50+ votos por titulo, y al menos 100 series por genero. La cifra sin minimo
+    se conserva solo como comprobacion."""
+    h = {"kpis": kpis(df), "brecha_votos": brecha_por_votos(df)}
+    d50 = df[df["vote_count"] >= VOTOS_CONFIABLE]
+    h["kpis50"] = kpis(d50)
+
+    # 1) Series vs Peliculas (50+ votos): anios y generos comparables donde ganan las Series
+    pa = calif_por_anio(d50).pivot(index="release_year", columns="content_type", values="calif_prom").dropna()
     h["anios_total"] = int(len(pa))
     h["anios_series"] = int((pa["Serie TV"] > pa["Película"]).sum())
-    tg = tabla_generos(df, solo_comparables=True)
+    h["brecha_min_anio"] = float((pa["Serie TV"] - pa["Película"]).min()) if len(pa) else None
+    tg = tabla_generos(d50, solo_comparables=True)
     pv = tg.pivot(index="genres", columns="content_type", values="calif_prom").dropna()
     h["generos_total"] = int(len(pv))
     h["generos_series"] = int((pv["Serie TV"] > pv["Película"]).sum())
+    h["n_series50"] = int(((d50["content_type"] == "Serie TV") & ~d50["sin_calificacion"]).sum())
+    h["n_peliculas50"] = int(((d50["content_type"] == "Película") & ~d50["sin_calificacion"]).sum())
 
-    # 2) Generos comparables con mejor nota en Series
-    h["series_top_generos"] = pv["Serie TV"].sort_values(ascending=False).head(2)
+    # 2) Generos comparables con mejor nota en Series (50+ votos y al menos 100 series, como en paises)
+    nser = tg[tg["content_type"] == "Serie TV"].set_index("genres")["titulos"]
+    validos = nser[nser >= MIN_TITULOS_GRUPO].index
+    h["series_top_generos"] = pv.loc[pv.index.isin(validos), "Serie TV"].sort_values(ascending=False).head(2)
+    h["series_top_generos_n"] = nser
 
     # 3) Popularidad vs nota dentro de cada formato (50+ votos) e indice combinado por formato
     cf = correlacion_por_formato(df, 50)

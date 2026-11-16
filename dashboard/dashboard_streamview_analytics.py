@@ -233,6 +233,8 @@ except FileNotFoundError:
     st.stop()
 
 BASE = ud.kpis(df_catalogo)  # cifras del catalogo completo (no cambian con los filtros)
+# Mismo catalogo con el umbral de confiabilidad (50+ votos), el que usan las recomendaciones y los paises
+BASE50 = ud.kpis(df_catalogo[df_catalogo["vote_count"] >= ud.VOTOS_CONFIABLE])
 
 # ============================================================
 # BARRA LATERAL: FILTROS Y GLOSARIO
@@ -252,16 +254,26 @@ votos_min = st.sidebar.select_slider(
     "Mínimo de votos acumulados", options=[0, 10, 25, 50, 100, 200, 500, 1000], value=0,
     help=(
         "Una nota basada en pocos votos es poco confiable, y los estrenos recientes aún no "
-        "juntan votos. Sube este filtro para quedarte con títulos validados por más gente."
+        "juntan votos. Sube este filtro para quedarte con títulos validados por más gente. "
+        f"{ud.VOTOS_CONFIABLE} votos es el umbral que usan las recomendaciones y la comparación de países."
     ),
 )
 generos_disponibles = sorted(ud.explode_columna(df_catalogo, "genres")["genres"].dropna().unique())
 generos_sel = st.sidebar.multiselect(
     "Géneros (vacío = todos)", options=generos_disponibles, default=[],
-    format_func=ud.etiqueta_genero,
+    format_func=ud.etiqueta_genero, placeholder="Ej.: Animación, Drama",
     help=("Al elegir uno o más géneros, todo se recalcula solo con esos títulos. "
           "★ = género que existe en Películas y en Series (los 8 que se pueden comparar entre formatos). "
           "Los demás son de un solo formato, por ejemplo «Acción y Aventura» (Series) o «Acción» (Películas)."),
+)
+VOL_PAISES = ud.paises_por_volumen(df_catalogo)
+paises_sel = st.sidebar.multiselect(
+    "Países de producción (vacío = todos)", options=VOL_PAISES.index.tolist(), default=[],
+    format_func=ud.es_pais,
+    placeholder="Ej.: Corea del Sur, Japón",
+    help=("Ordenados de mayor a menor cantidad de títulos. Al elegir uno o más países, "
+          "todo se recalcula solo con sus títulos. Una coproducción entra si alguno de sus países está elegido. "
+          "Sirve para revisar los mercados de la recomendación 4 (pestaña 6)."),
 )
 
 with st.sidebar.expander("Glosario (en simple)"):
@@ -319,18 +331,26 @@ vista = st.radio(
 tipos_sel = {"Todo el catálogo": ORDEN_TIPO, "Solo Películas": ["Película"], "Solo Series TV": ["Serie TV"]}[vista]
 un_formato = len(tipos_sel) == 1
 
-df_f = ud.aplicar_filtros(df_catalogo, tipos_sel, anio_min, anio_max, votos_min, generos_sel)
+df_f = ud.aplicar_filtros(df_catalogo, tipos_sel, anio_min, anio_max, votos_min, generos_sel, paises_sel)
 
 if df_f.empty:
     st.warning(
-        "No hay títulos con esta combinación de filtros. Prueba bajando el mínimo de votos "
-        "o ampliando el rango de años."
+        "No hay títulos con esta combinación de filtros. Prueba bajando el mínimo de votos, "
+        "ampliando el rango de años o quitando algún país o género."
     )
     st.stop()
 
+_activos = []
+if generos_sel:
+    _activos.append("géneros: " + ", ".join(ud.es_genero(g) for g in generos_sel))
+if paises_sel:
+    _activos.append("países: " + ", ".join(ud.es_pais(p) for p in paises_sel))
+if votos_min > 0:
+    _activos.append(f"{votos_min}+ votos")
 st.caption(
     f"Mostrando **{miles(len(df_f))}** de {miles(len(df_catalogo))} títulos "
-    f"({len(df_f) / len(df_catalogo) * 100:.0f}% del catálogo)."
+    f"({len(df_f) / len(df_catalogo) * 100:.0f}% del catálogo)"
+    + (f" · Filtros activos: {' · '.join(_activos)}." if _activos else ".")
 )
 
 with st.expander("¿Cómo leer este dashboard?"):
@@ -391,15 +411,19 @@ with t1:
         "Las Series TV puntúan más que las Películas. ¿Es un hecho de siempre o un accidente de un año?",
     )
     if K["brecha"] is not None:
-        distinta = abs(K["brecha"] - BASE["brecha"]) >= 0.005
-        frase_base = (f" En el catálogo completo la diferencia es de {num(BASE['brecha'])} puntos a favor de las Series."
-                      if distinta else "")
         a_favor = "las Series" if K["brecha"] >= 0 else "las Películas"
+        aviso_votos = ""
+        if votos_min < ud.VOTOS_CONFIABLE:
+            aviso_votos = (f" Ojo: esta cifra incluye títulos con menos de {ud.VOTOS_CONFIABLE} votos, cuya nota es poco "
+                           f"confiable. Sube el «Mínimo de votos» a {ud.VOTOS_CONFIABLE} para ver la cifra que usa la recomendación.")
         respuesta(
-            f"<b>En esta selección</b>, las Series TV tienen una nota de <b>{num(K['calif_serie'])}</b> y las "
-            f"Películas de <b>{num(K['calif_pelicula'])}</b> (sobre 10): <b>{num(abs(K['brecha']))} puntos</b> a favor "
-            f"de {a_favor}.{frase_base} El gráfico de la derecha muestra si la ventaja se repite año a año; "
-            f"en el catálogo completo se repite <b>los 16 años</b>."
+            f"Con el umbral de confiabilidad que usamos también para comparar países (<b>{ud.VOTOS_CONFIABLE}+ votos</b> "
+            f"por título), las Series TV tienen una nota de <b>{num(BASE50['calif_serie'])}</b> y las Películas de "
+            f"<b>{num(BASE50['calif_pelicula'])}</b> en el catálogo completo: <b>{num(BASE50['brecha'])} puntos</b> a favor "
+            f"de las Series, y la ventaja se repite <b>los 16 años</b>.<br>"
+            f"<b>En esta selección</b> ({'sin mínimo de votos' if votos_min == 0 else f'{votos_min}+ votos'}): Series <b>{num(K['calif_serie'])}</b>, "
+            f"Películas <b>{num(K['calif_pelicula'])}</b>, <b>{num(abs(K['brecha']))} puntos</b> a favor de {a_favor}."
+            f"{aviso_votos}"
         )
     else:
         nota("Para comparar Series y Películas, elige «Todo el catálogo» en «¿Qué quieres ver?»"
@@ -419,7 +443,7 @@ with t1:
             )
             fig_res.update_traces(texttemplate="%{text:.2f}", textposition="outside")
             fig_res.update_layout(**LAYOUT_BASE, showlegend=False, yaxis=dict(range=[0, 10]), height=400)
-            st.plotly_chart(fig_res, use_container_width=True)
+            st.plotly_chart(fig_res, width="stretch")
         else:
             st.info("No hay títulos calificados con estos filtros.")
 
@@ -441,7 +465,7 @@ with t1:
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                 xaxis=dict(dtick=1), height=400,
             )
-            st.plotly_chart(fig_anio, use_container_width=True)
+            st.plotly_chart(fig_anio, width="stretch")
         else:
             st.info("No hay títulos calificados en este rango de años.")
     st.caption(
@@ -449,28 +473,34 @@ with t1:
         "de los 16 años. El eje vertical no parte de 0 porque aquí importa la distancia entre las líneas."
     )
 
-    with st.expander("¿Y si las series puntúan alto solo porque tienen pocos votos? (¿es necesario fijar un mínimo de votos?)"):
-        bv = ud.brecha_por_votos(df_catalogo)
-        if not bv.empty:
-            bv = bv.assign(exigencia=bv["votos_min"].map(etiqueta_votos))
-            fig_bv = px.bar(
-                bv, x="exigencia", y="brecha", text="brecha",
-                labels={"exigencia": "Votos mínimos exigidos a cada título",
-                        "brecha": "Diferencia de nota (Series − Películas)"},
-                title="La ventaja de las Series se mantiene (y crece) al exigir más votos",
-                color_discrete_sequence=[AZUL],
+    pregunta("¿La ventaja depende de las series con pocos votos?")
+    bv = ud.brecha_por_votos(df_catalogo)
+    if not bv.empty:
+        bv = bv.assign(exigencia=bv["votos_min"].map(etiqueta_votos))
+        bv["umbral"] = bv["votos_min"].eq(ud.VOTOS_CONFIABLE).map(
+            {True: f"Umbral de la recomendación ({ud.VOTOS_CONFIABLE}+ votos)", False: "Otros mínimos"})
+        fig_bv = px.bar(
+            bv, x="exigencia", y="brecha", text="brecha", color="umbral",
+            color_discrete_map={f"Umbral de la recomendación ({ud.VOTOS_CONFIABLE}+ votos)": AZUL,
+                                "Otros mínimos": GRIS_LINEA},
+            category_orders={"exigencia": bv["exigencia"].tolist()},
+            labels={"exigencia": "Votos mínimos exigidos a cada título",
+                    "brecha": "Diferencia de nota (Series − Películas)", "umbral": ""},
+            title="La ventaja de las Series se mantiene y crece al exigir más votos",
+        )
+        fig_bv.update_traces(texttemplate="%{text:.2f}", textposition="outside", cliponaxis=False)
+        fig_bv.update_layout(**LAYOUT_BASE, height=360,
+                             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+        st.plotly_chart(fig_bv, width="stretch")
+        f0, f50 = ud.fila(bv, "votos_min", 0), ud.fila(bv, "votos_min", ud.VOTOS_CONFIABLE)
+        if f0 is not None and f50 is not None:
+            st.caption(
+                f"Cómo leerlo: la mitad de las series calificadas tiene menos de 10 votos, y su nota es ruido. "
+                f"Por eso la recomendación usa {ud.VOTOS_CONFIABLE}+ votos, el mismo umbral que la comparación de países: "
+                f"quedan {miles(f50['n_serie'])} series y {miles(f50['n_pelicula'])} películas, y la diferencia es de "
+                f"{num(f50['brecha'])} puntos (sin mínimo era {num(f0['brecha'])}). Exigir votos no crea la ventaja: la aumenta. "
+                f"(Este gráfico usa siempre el catálogo completo.)"
             )
-            fig_bv.update_traces(texttemplate="%{text:.2f}", textposition="outside")
-            fig_bv.update_layout(**LAYOUT_BASE, showlegend=False, height=360)
-            st.plotly_chart(fig_bv, use_container_width=True)
-            f50 = ud.fila(bv, "votos_min", 50)
-            if f50 is not None:
-                st.caption(
-                    f"Es una duda razonable: la mitad de las series calificadas tiene menos de 10 votos. "
-                    f"Por eso se probó exigiendo más votos: con 50+ votos quedan {miles(f50['n_serie'])} series y "
-                    f"{miles(f50['n_pelicula'])} películas, y la diferencia sube a {num(f50['brecha'])} puntos. "
-                    f"(Esta comprobación usa siempre el catálogo completo.)"
-                )
 
     with st.expander("¿Por qué no se muestra cuántos títulos hay por año?"):
         st.markdown(
@@ -524,7 +554,7 @@ with t2:
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
             xaxis=dict(range=[0, 9]), height=480,
         )
-        st.plotly_chart(figa, use_container_width=True)
+        st.plotly_chart(figa, width="stretch")
         st.caption("Cómo leerlo: barras más largas = mejor nota. Cada género tiene un par de barras para comparar.")
 
         # Grafico B: volumen por genero
@@ -543,7 +573,7 @@ with t2:
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
             height=480,
         )
-        st.plotly_chart(figb, use_container_width=True)
+        st.plotly_chart(figb, width="stretch")
         st.caption("Cómo leerlo: barras más largas = más títulos. La cantidad por año la fijó la muestra "
                    "(ver pestaña 1), pero la mezcla entre géneros sí es comparable.")
     else:
@@ -581,7 +611,7 @@ with t2:
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
             height=500,
         )
-        st.plotly_chart(figp, use_container_width=True)
+        st.plotly_chart(figp, width="stretch")
         st.caption("Cómo leerlo: los géneros arriba a la derecha son los mejores en nota y popularidad. "
                    "Pasa el cursor sobre una burbuja para ver el género.")
     else:
@@ -646,7 +676,7 @@ with t3:
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
             yaxis=dict(range=[0, 10.3]), height=500,
         )
-        st.plotly_chart(fig_d, use_container_width=True)
+        st.plotly_chart(fig_d, width="stretch")
         st.caption(
             "Cómo leerlo: si lo popular fuera lo mejor, los puntos formarían una línea que sube de izquierda a "
             "derecha. Aquí forman una nube ancha. La escala logarítmica (cada marca multiplica por 10) evita que "
@@ -664,7 +694,7 @@ with t3:
                 "Solo Películas (ρ)": num(r_fmt["Película"][0]),
                 "Solo Series (ρ)": num(r_fmt["Serie TV"][0]),
             })
-        st.dataframe(pd.DataFrame(filas), hide_index=True, use_container_width=True)
+        st.dataframe(pd.DataFrame(filas), hide_index=True, width="stretch")
         st.markdown(
             "**Dos efectos.** (1) Una nota que viene de 3 votos es puro ruido y tapa la relación: al exigir más "
             "votos, la relación aparece con más claridad. (2) Si se mezclan Películas y Series, la relación se ve "
@@ -681,13 +711,58 @@ with t4:
         "¿De dónde vienen las Series mejor evaluadas?",
         "Nota promedio de las series por país, comparada con un mínimo de votos para que sea confiable. Más abajo, los idiomas del catálogo.",
     )
+    # Con paises elegidos en el filtro: se comparan SOLO esos paises, y se marca cuales tienen base suficiente
+    if paises_sel:
+        pregunta("¿Cómo se comparan los países elegidos?")
+        pe = ud.paises_nota_50(df_f, 0)
+        pe = pe[pe["country"].isin(paises_sel)].copy()
+        sin_datos = [ud.es_pais(p) for p in paises_sel if p not in set(pe["country"])]
+        if pe.empty:
+            st.info(f"Ninguno de los países elegidos tiene series con {ud.VOTOS_CONFIABLE}+ votos en esta selección. "
+                    "Activa «Serie TV» en «¿Qué quieres ver?» o amplía los años.")
+        else:
+            pe["base"] = pe["titulos"].ge(ud.MIN_TITULOS_GRUPO).map(
+                {True: f"Base suficiente ({ud.MIN_TITULOS_GRUPO}+ series)", False: "Pocas series: referencial"})
+            pe = pe.sort_values("nota", ascending=False).assign(
+                pais=lambda d: d["country"].map(ud.es_pais),
+                etiqueta=lambda d: d.apply(lambda r: f"{num(r['nota'])} ± {num(r['error'])}  ({miles(r['titulos'])} series)"
+                                           if pd.notna(r["error"]) else f"{num(r['nota'])}  ({miles(r['titulos'])} serie)",
+                                           axis=1),
+            )
+            ok = pe[pe["titulos"] >= ud.MIN_TITULOS_GRUPO].sort_values("nota", ascending=False)
+            txt_ok = (", ".join(f"<b>{r['pais']}</b> {num(r['nota'])}" for _, r in ok.iterrows())
+                      if not ok.empty else "ninguno")
+            debiles = pe[pe["titulos"] < ud.MIN_TITULOS_GRUPO]["pais"].tolist()
+            respuesta(
+                f"Países elegidos con base suficiente ({ud.MIN_TITULOS_GRUPO}+ series con {ud.VOTOS_CONFIABLE}+ votos): {txt_ok}. "
+                + (f"Con pocas series, solo como referencia: {', '.join(debiles)}. " if debiles else "")
+                + (f"Sin series con {ud.VOTOS_CONFIABLE}+ votos: {', '.join(sin_datos)}." if sin_datos else "")
+            )
+            fig_pe = px.bar(
+                pe, x="nota", y="pais", orientation="h", text="etiqueta", color="base",
+                color_discrete_map={f"Base suficiente ({ud.MIN_TITULOS_GRUPO}+ series)": AZUL,
+                                    "Pocas series: referencial": GRIS_LINEA},
+                category_orders={"pais": pe["pais"].tolist()},
+                labels={"nota": f"Nota promedio de las series con {ud.VOTOS_CONFIABLE}+ votos (0–10)", "pais": "", "base": ""},
+                title="Series de los países elegidos: nota promedio (± margen de error)",
+            )
+            fig_pe.update_traces(textposition="outside", cliponaxis=False)
+            fig_pe.update_layout(**LAYOUT_BASE, xaxis=dict(range=[0, 11]), height=max(260, 70 * len(pe) + 120),
+                                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+            st.plotly_chart(fig_pe, width="stretch")
+            st.caption("Cómo leerlo: barra azul = país con suficientes series para comparar; gris = pocas series, la nota "
+                       "puede moverse mucho por azar (mira el ± margen de error). Quita el filtro de países para ver el "
+                       "ranking general.")
+
     # Nota por pais usando solo series con 50+ votos; el minimo de series por pais baja si el filtro deja pocas
     min_t, pn = 100, pd.DataFrame()
     for min_t in (100, 50, 25):
         pn = ud.paises_nota_50(df_f, min_t)
         if len(pn) >= 3:
             break
-    if pn.empty:
+    if paises_sel:
+        pass  # con filtro de paises ya se mostro la comparacion de los paises elegidos
+    elif pn.empty:
         st.info("Este gráfico analiza Series TV con 50+ votos. Activa “Serie TV” en «¿Qué quieres ver?» "
                 "y revisa que el mínimo de votos no deje muy pocos títulos.")
     else:
@@ -718,7 +793,7 @@ with t4:
         )
         fig_p.update_traces(textposition="outside", cliponaxis=False)
         fig_p.update_layout(**LAYOUT_BASE, showlegend=False, xaxis=dict(range=[0, 10.5]), height=420)
-        st.plotly_chart(fig_p, use_container_width=True)
+        st.plotly_chart(fig_p, width="stretch")
         st.caption(f"Cómo leerlo: cada barra es la nota promedio de las series del país que tienen 50 votos o más; "
                    f"entre paréntesis, cuántas series cumplen eso. Solo aparecen países con {min_t}+ series así.")
 
@@ -736,7 +811,7 @@ with t4:
                 "Margen de error (±)": tv["error"].map(num),
             })[["País", "Series (total)", "Series con 50+ votos", "Nota prom. (sin mínimo)",
                 "Nota prom. (50+ votos)", "Margen de error (±)"]]
-            st.dataframe(tv, hide_index=True, use_container_width=True)
+            st.dataframe(tv, hide_index=True, width="stretch")
             st.markdown(
                 "**1. Por qué el mínimo de votos.** Muchas series de un país tienen muy pocos votos, y esas notas son "
                 "ruido: bajan o suben el promedio sin que signifique nada. Al exigir 50+ votos cambia el orden de los "
@@ -765,7 +840,7 @@ with t4:
         )
         fig_i.update_traces(texttemplate="%{text:.1f}%", textposition="outside", cliponaxis=False)
         fig_i.update_layout(**LAYOUT_BASE, showlegend=False, height=400)
-        st.plotly_chart(fig_i, use_container_width=True)
+        st.plotly_chart(fig_i, width="stretch")
         top3 = ti[ti["language"].isin(["zh", "ja", "ko"])]["porcentaje"].sum()
         st.caption(f"Chino, japonés y coreano suman {num(top3, 1)}% de los títulos de la selección.")
 
@@ -821,7 +896,7 @@ with t5:
                 fig_r.update_traces(texttemplate="%{text:.1f}×", textposition="outside", cliponaxis=False,
                                     marker_line_color=NEGRO, marker_line_width=1)
                 fig_r.update_layout(**LAYOUT_BASE, showlegend=False, height=480)
-                st.plotly_chart(fig_r, use_container_width=True)
+                st.plotly_chart(fig_r, width="stretch")
                 st.caption("Cómo leerlo: barras más largas = más dinero recaudado por cada dólar invertido. "
                            "Solo géneros con al menos 60 películas con datos.")
 
@@ -843,7 +918,7 @@ with t5:
             fig_s.update_layout(**LAYOUT_BASE, showlegend=True,
                                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                                 height=500)
-            st.plotly_chart(fig_s, use_container_width=True)
+            st.plotly_chart(fig_s, width="stretch")
             st.caption("Cómo leerlo: los puntos sobre la línea punteada recaudaron más de lo que costaron; los "
                        "que están debajo, perdieron dinero (en bruto).")
 
@@ -867,31 +942,34 @@ with t6:
         "Cinco decisiones para el Comité, las mismas del notebook. Todas las cifras de esta pestaña usan el catálogo completo (sin filtros).",
     )
     H = calcular_hallazgos(df_catalogo, df_movies)
-    KB = H["kpis"]
-    bv50 = ud.fila(H["brecha_votos"], "votos_min", 50)
+    KB, K50 = H["kpis"], H["kpis50"]
+    V = ud.VOTOS_CONFIABLE
 
-    # --- 1. Series
-    extra_50 = f" Exigiendo 50+ votos la ventaja sube a {num(bv50['brecha'])} puntos." if bv50 is not None else ""
+    # --- 1. Series (mismo umbral que los paises: 50+ votos)
     tarjeta_reco(
         "1 · Priorizar las Series",
         "Reorientar el mix de inversión hacia las Series como formato de calidad percibida.",
-        f"Las Series puntúan {num(KB['calif_serie'])} vs. {num(KB['calif_pelicula'])} de las Películas "
-        f"(+{num(KB['brecha'])}). Ganan en {H['anios_series']} de {H['anios_total']} años y en "
-        f"{H['generos_series']} de {H['generos_total']} géneros comparables.{extra_50}",
-        "Los datos no distinguen series originales de licenciadas: es una conclusión sobre el formato, "
-        "no sobre producción propia.",
+        f"Con {V}+ votos por título (el mismo umbral que exigimos para comparar países), las Series puntúan "
+        f"{num(K50['calif_serie'])} vs. {num(K50['calif_pelicula'])} de las Películas (+{num(K50['brecha'])}), "
+        f"sobre {miles(H['n_series50'])} series y {miles(H['n_peliculas50'])} películas. Ganan en "
+        f"{H['anios_series']} de {H['anios_total']} años (la menor diferencia anual es de {num(H['brecha_min_anio'])} puntos) "
+        f"y en {H['generos_series']} de {H['generos_total']} géneros comparables. Sin exigir votos la diferencia es "
+        f"menor (+{num(KB['brecha'])}): el umbral no crea la ventaja, la confirma.",
+        f"Solo una de cada cuatro series calificadas alcanza {V} votos: la conclusión vale para series con audiencia "
+        "suficiente para evaluarlas. Además, los datos no distinguen series originales de licenciadas.",
     )
 
-    # --- 2. Generos
+    # --- 2. Generos (50+ votos y al menos 100 series por genero, como en paises)
     tg2 = H["series_top_generos"]
-    txt_g = " y ".join(f"<b>{ud.es_genero(g)}</b> ({num(v)})" for g, v in tg2.items())
+    n_g = H["series_top_generos_n"]
+    txt_g = " y ".join(f"<b>{ud.es_genero(g)}</b> ({num(v)}; {miles(n_g[g])} series)" for g, v in tg2.items())
     tarjeta_reco(
         "2 · Dentro de las Series, apostar por los géneros mejor evaluados",
         f"Priorizar {txt_g}.",
-        "Son los dos géneros con mejor nota en Series entre los 8 que se llaman igual en Películas y en Series "
-        "(pestaña 2).",
-        "Solo 8 géneros son comparables entre formatos. Otros, como Acción y Aventura o Sci-Fi y Fantasía, "
-        "existen solo en Series y no se pueden contrastar con Películas.",
+        f"Son los dos géneros comparables con mejor nota en Series, contando solo series con {V}+ votos y géneros "
+        f"con al menos {ud.MIN_TITULOS_GRUPO} series así: la misma regla que se usa para los países.",
+        "Documental y Western tienen notas altas, pero menos de 100 series con 50+ votos: no se recomiendan con "
+        "confianza. Solo 8 géneros son comparables entre formatos.",
     )
 
     # --- 3. Dos metricas
@@ -952,7 +1030,7 @@ with t6:
         tabla_idx["Popularidad"] = tabla_idx["Popularidad"].round(1)
         tabla_idx["Nota"] = tabla_idx["Nota"].round(2)
         tabla_idx["Índice (0–100)"] = tabla_idx["Índice (0–100)"].round(1)
-        st.dataframe(tabla_idx, hide_index=True, use_container_width=True)
+        st.dataframe(tabla_idx, hide_index=True, width="stretch")
         st.caption("Índice = promedio de la posición (percentil) del título en popularidad y en nota, calculada "
                    "entre todos los títulos con 50+ votos. Se muestran los 5 mejores de cada formato para poder compararlos.")
 
@@ -975,15 +1053,17 @@ with t8:
         titulo_ig = c2.text_input("Título personalizado (opcional)", key="ig_titulo",
                                   placeholder="Ej.: Series de Animación 2015–2025")
         criterio_ig = ud.CRITERIOS_RANKING[criterio_lbl]
-        firma = (tuple(tipos_sel), anio_min, anio_max, votos_min, tuple(generos_sel), criterio_ig, titulo_ig)
+        firma = (tuple(tipos_sel), anio_min, anio_max, votos_min, tuple(generos_sel), tuple(paises_sel),
+                 criterio_ig, titulo_ig)
 
         if st.button("Generar infografía con los filtros actuales", type="primary", key="ig_boton"):
             try:
                 fig_ig = ig.construir_infografia(df_f, df_catalogo, tipos_sel, anio_min, anio_max, votos_min,
                                                  generos_sel, criterio=criterio_ig, titulo=titulo_ig,
-                                                 peliculas=df_movies)
+                                                 peliculas=df_movies, paises=paises_sel)
                 informe_md = ig.construir_informe(df_f, df_catalogo, tipos_sel, anio_min, anio_max, votos_min,
-                                                  generos_sel, criterio=criterio_ig, titulo=titulo_ig)
+                                                  generos_sel, criterio=criterio_ig, titulo=titulo_ig,
+                                                  paises=paises_sel)
                 png_b, pdf_b = ig.exportar(fig_ig)
                 st.session_state["ig_resultado"] = {"firma": firma, "png": png_b, "pdf": pdf_b,
                                                     "informe": informe_md}
@@ -1027,7 +1107,7 @@ with t7:
     tabla["Calificación"] = tabla["Calificación"].round(2)
 
     st.dataframe(
-        tabla, use_container_width=True, height=460, hide_index=True,
+        tabla, width="stretch", height=460, hide_index=True,
         column_config={
             "Popularidad": st.column_config.NumberColumn(format="%.1f"),
             "Calificación": st.column_config.ProgressColumn(format="%.2f", min_value=0, max_value=10),
