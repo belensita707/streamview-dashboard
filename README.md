@@ -65,7 +65,9 @@ El dashboard **busca solo la carpeta `data/`**, así que se puede lanzar desde c
 
 ## 4. El dashboard
 
-**Filtros** (panel izquierdo y selector superior): formato, año de lanzamiento, mínimo de votos, género y país de producción. Todo se recalcula con ellos, salvo la pestaña 6. Con uno o más países elegidos, la pestaña 4 compara solo esos países y marca cuáles tienen series suficientes (100+ con 50+ votos).
+**Filtros** (panel izquierdo y selector superior): formato, año de lanzamiento, mínimo de votos, género y país de producción. Todo se recalcula con ellos, salvo la pestaña 6. Con uno o más países elegidos, la pestaña 4 compara solo esos países y marca cuáles tienen series suficientes (100+ con 50+ votos). Los títulos de los gráficos de las pestañas 1 y 2 se calculan con la selección (por ejemplo, con Chile la pestaña 2 dice «las Películas puntúan más en los 5» géneros). En la evolución por año solo cuentan títulos con 10+ votos y se omiten los años con menos de 10 títulos así por formato.
+
+**Infografía con comparación de países**: en la pestaña de la infografía se eligen hasta 6 países y la ficha agrega un gráfico con la nota de cada país separada por formato (Series en azul, Películas en amarillo), solo con títulos de 50+ votos; en color claro los formatos con pocos datos. El filtro de país no usa umbral; el umbral solo se usa para comparar notas entre países: con menos de 100 títulos con 50+ votos en un formato, esa barra aparece en color claro como referencial.
 
 **KPIs** (se recalculan con los filtros): títulos, calificación de Películas, calificación de Series, diferencia entre ambas y popularidad Series ÷ Películas.
 
@@ -76,7 +78,7 @@ El dashboard **busca solo la carpeta `data/`**, así que se puede lanzar desde c
 | 3. Popular vs. bueno | ¿Lo popular es lo mejor evaluado? | Dispersión por título, ρ mezclado y por formato |
 | 4. Países e idiomas | ¿De dónde viene el contenido? | Nota por país (50+ votos), idiomas |
 | 5. Finanzas | ¿Cuánto rinden las películas? | ROI por género, presupuesto vs. ingresos |
-| 6. Qué decidir | ¿Qué decisiones se desprenden? | Cinco decisiones con su evidencia e índice combinado (5 mejores de cada formato) |
+| 6. Qué decidir | ¿Qué decisiones se desprenden? | Seis decisiones, las mismas y en el mismo orden que el informe, con su evidencia e índice combinado (5 mejores de cada formato) |
 | 7. Infografía | ¿Cómo comunico un segmento? | Botón que genera una hoja A4 (PDF y PNG) con los filtros activos |
 | Explorar datos | — | Tabla filtrable con descarga a CSV |
 
@@ -121,3 +123,4 @@ En el filtro de géneros, los **8 géneros comparables** llevan una **★** (exi
 | Matplotlib | Infografía exportable (PNG y PDF) |
 | Streamlit | Dashboard |
 | Google Colab | Notebook de análisis |
+
