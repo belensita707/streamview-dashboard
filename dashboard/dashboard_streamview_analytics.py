@@ -273,7 +273,7 @@ paises_sel = st.sidebar.multiselect(
     placeholder="Ej.: Corea del Sur, Japón",
     help=("Ordenados de mayor a menor cantidad de títulos. Al elegir uno o más países, "
           "todo se recalcula solo con sus títulos. Una coproducción entra si alguno de sus países está elegido. "
-          "Sirve para revisar los mercados de la recomendación 4 (pestaña 6)."),
+          "Sirve para revisar los mercados de la recomendación 2 (pestaña 6)."),
 )
 
 with st.sidebar.expander("Glosario (en simple)"):
@@ -388,8 +388,13 @@ else:
               help="Nota promedio de las películas con calificación real.")
     c3.metric("Calificación Series TV", f"{num(K['calif_serie'])} / 10" if K["calif_serie"] is not None else "—",
               help="Nota promedio de las series con calificación real.")
+    _b50 = ud.brecha_por_votos(df_f, umbrales=(ud.VOTOS_CONFIABLE,))
     c4.metric("Diferencia (Series − Películas)", con_signo(K["brecha"]) if K["brecha"] is not None else "—",
-              help="Puntos de nota que las Series le sacan a las Películas.")
+              delta=(f"{con_signo(_b50.iloc[0]['brecha'])} con {ud.VOTOS_CONFIABLE}+ votos" if len(_b50) else None),
+              delta_color="off",
+              help=("Puntos de nota que las Series le sacan a las Películas con los filtros actuales. Debajo, la misma "
+                    f"diferencia contando solo títulos con {ud.VOTOS_CONFIABLE}+ votos: es la cifra que usa la recomendación "
+                    "y el mismo umbral que se exige para comparar países."))
     c5.metric("Popularidad Series ÷ Películas",
               f"{num(K['pop_veces'], 1)}×" if K["pop_veces"] is not None else "—",
               help="Cuántas veces mayor es la popularidad mediana de las Series frente a las Películas.")
@@ -449,7 +454,22 @@ with t1:
 
     with col_b:
         pregunta("¿Ocurre todos los años?")
-        por_anio = ud.calif_por_anio(df_f)
+        por_anio = ud.calif_por_anio(df_f, ud.MIN_TITULOS_ANIO, ud.VOTOS_ANIO)
+        _pv = por_anio.pivot(index="release_year", columns="content_type", values="calif_prom")
+        if {"Película", "Serie TV"} <= set(_pv.columns):
+            _pv = _pv.dropna(subset=["Película", "Serie TV"])
+            anios_comp = len(_pv)
+            anios_serie = int((_pv["Serie TV"] > _pv["Película"]).sum())
+        else:
+            anios_comp = anios_serie = 0
+        if anios_comp <= 1:
+            titulo_anio = "Nota promedio por año"
+        elif anios_serie == anios_comp:
+            titulo_anio = f"Las Series puntúan más en los {anios_comp} años comparables"
+        elif anios_serie == 0:
+            titulo_anio = f"Las Películas puntúan más en los {anios_comp} años comparables"
+        else:
+            titulo_anio = f"Las Series puntúan más en {anios_serie} de {anios_comp} años"
         if not por_anio.empty:
             fig_anio = px.line(
                 por_anio, x="release_year", y="calif_prom", color="content_type",
@@ -457,7 +477,7 @@ with t1:
                 category_orders={"content_type": ORDEN_TIPO},
                 labels={"release_year": "Año de lanzamiento", "calif_prom": "Calificación promedio (0–10)",
                         "content_type": ""},
-                title="Las Series puntúan más, año tras año",
+                title=titulo_anio,
             )
             fig_anio.update_traces(line=dict(width=4), marker=dict(size=8, line=dict(width=1, color=NEGRO)))
             fig_anio.update_layout(
@@ -467,11 +487,29 @@ with t1:
             )
             st.plotly_chart(fig_anio, width="stretch")
         else:
-            st.info("No hay títulos calificados en este rango de años.")
-    st.caption(
-        "Cómo leerlo: si las dos líneas se cruzaran, la ventaja sería un accidente. No se cruzan en ninguno "
-        "de los 16 años. El eje vertical no parte de 0 porque aquí importa la distancia entre las líneas."
-    )
+            st.info(f"Con estos filtros ningún año tiene al menos {ud.MIN_TITULOS_ANIO} títulos con {ud.VOTOS_ANIO}+ votos por formato, "
+                    "así que no se dibuja la evolución (el promedio de pocos títulos es ruido).")
+    if anios_comp == 1:
+        st.caption("Con estos filtros solo hay un año comparable: no se puede hablar de una tendencia. "
+                   f"Solo cuentan títulos con {ud.VOTOS_ANIO}+ votos y años con {ud.MIN_TITULOS_ANIO}+ títulos así por formato.")
+    elif anios_comp:
+        if anios_serie == anios_comp:
+            lectura_anio = (f"En esta selección las líneas no se cruzan en ninguno de los {anios_comp} años comparables: "
+                            "la ventaja de las Series no es un accidente de un año.")
+        elif anios_serie == 0:
+            lectura_anio = (f"En esta selección las Películas puntúan más en los {anios_comp} años comparables.")
+        else:
+            lectura_anio = (f"En esta selección las líneas se cruzan: las Series puntúan más en {anios_serie} de "
+                            f"{anios_comp} años, así que aquí la ventaja no es estable.")
+        st.caption(
+            "Cómo leerlo: si las dos líneas se cruzaran, la ventaja sería un accidente. "
+            f"{lectura_anio} Solo cuentan títulos con {ud.VOTOS_ANIO}+ votos (los estrenos recientes aún tienen muy "
+            f"pocos y bajarían el último año sin ser una tendencia) y se omiten los años con menos de "
+            f"{ud.MIN_TITULOS_ANIO} títulos así por formato. El eje vertical no parte de 0 porque aquí importa la distancia entre las líneas."
+        )
+    else:
+        st.caption(f"Solo cuentan títulos con {ud.VOTOS_ANIO}+ votos y se omiten los años con menos de "
+                   f"{ud.MIN_TITULOS_ANIO} títulos así por formato, porque su promedio es ruido.")
 
     pregunta("¿La ventaja depende de las series con pocos votos?")
     bv = ud.brecha_por_votos(df_catalogo)
@@ -522,6 +560,7 @@ with t2:
     tg = ud.tabla_generos(df_f, solo_comparables=True)
     tg = tg.assign(genero=tg["genres"].map(ud.es_genero))
 
+    titulo_generos = "Nota promedio por género comparable"
     if not tg.empty:
         pv_cal = tg.pivot(index="genres", columns="content_type", values="calif_prom")
         pv_n = tg.pivot(index="genres", columns="content_type", values="titulos")
@@ -530,10 +569,19 @@ with t2:
             gana_nota = int((ambos["Serie TV"] > ambos["Película"]).sum())
             ambos_n = pv_n.reindex(ambos.index)
             gana_vol = int((ambos_n["Serie TV"] >= ambos_n["Película"]).sum())
+            if len(ambos) and gana_nota == len(ambos):
+                titulo_generos = f"Nota promedio por género: las Series puntúan más en los {len(ambos)}"
+                cierre_g = "La ventaja de las Series <b>no depende de un género en particular</b>."
+            elif len(ambos) and gana_nota == 0:
+                titulo_generos = f"Nota promedio por género: las Películas puntúan más en los {len(ambos)}"
+                cierre_g = "En esta selección la ventaja es de las <b>Películas</b>."
+            else:
+                titulo_generos = f"Nota promedio por género: las Series puntúan más en {gana_nota} de {len(ambos)}"
+                cierre_g = ("En esta selección la ventaja de las Series <b>depende del género</b>: "
+                            "revisa el gráfico antes de generalizar.")
             respuesta(
                 f"En <b>{gana_nota} de {len(ambos)}</b> géneros comparables las Series tienen mejor nota que las "
-                f"Películas, y en <b>{gana_vol} de {len(ambos)}</b> tienen igual o más títulos. "
-                f"La ventaja de las Series <b>no depende de un género en particular</b>."
+                f"Películas, y en <b>{gana_vol} de {len(ambos)}</b> tienen igual o más títulos. {cierre_g}"
             )
         else:
             nota("Para comparar formatos, deja Películas y Series activas en el filtro de tipo de contenido.")
@@ -546,7 +594,7 @@ with t2:
             color_discrete_map=COLOR_FORMATO, text="calif_prom",
             category_orders={"genero": orden_g, "content_type": ORDEN_TIPO},
             labels={"calif_prom": "Calificación promedio (0–10)", "genero": "", "content_type": ""},
-            title="Nota promedio por género: las Series puntúan más en todos",
+            title=titulo_generos,
         )
         figa.update_traces(texttemplate="%{text:.2f}", textposition="outside", cliponaxis=False)
         figa.update_layout(
@@ -939,85 +987,111 @@ with t5:
 with t6:
     encabezado_seccion(
         "¿Qué decisiones se desprenden de los datos?",
-        "Cinco decisiones para el Comité, las mismas del notebook. Todas las cifras de esta pestaña usan el catálogo completo (sin filtros).",
+        "Seis decisiones para el Comité, las mismas y en el mismo orden que el informe ejecutivo. "
+        "Todas las cifras de esta pestaña usan el catálogo completo (sin filtros).",
     )
     H = calcular_hallazgos(df_catalogo, df_movies)
     KB, K50 = H["kpis"], H["kpis50"]
     V = ud.VOTOS_CONFIABLE
+    G = ud.MIN_TITULOS_GRUPO
+    PN0 = ud.paises_nota_50(df_catalogo, 0)  # nota y margen de error de cada pais (series con 50+ votos)
 
-    # --- 1. Series (mismo umbral que los paises: 50+ votos)
+    # --- 1. Series (mismo umbral que los paises: 50+ votos) y, dentro de ellas, los generos mejor evaluados
+    tg2 = H["series_top_generos"]
+    n_g = H["series_top_generos_n"]
+    txt_g = " y ".join(f"<b>{ud.es_genero(g)}</b> ({num(v)}; {miles(n_g[g])} series)" for g, v in tg2.items())
+    txt_g_corto = " y ".join(ud.es_genero(g) for g in tg2.index)
     tarjeta_reco(
-        "1 · Priorizar las Series",
-        "Reorientar el mix de inversión hacia las Series como formato de calidad percibida.",
+        "1 · Priorizar Series de calidad",
+        f"Orientar la próxima inversión de contenido hacia Series, empezando por {txt_g_corto}.",
         f"Con {V}+ votos por título (el mismo umbral que exigimos para comparar países), las Series puntúan "
         f"{num(K50['calif_serie'])} vs. {num(K50['calif_pelicula'])} de las Películas (+{num(K50['brecha'])}), "
         f"sobre {miles(H['n_series50'])} series y {miles(H['n_peliculas50'])} películas. Ganan en "
         f"{H['anios_series']} de {H['anios_total']} años (la menor diferencia anual es de {num(H['brecha_min_anio'])} puntos) "
         f"y en {H['generos_series']} de {H['generos_total']} géneros comparables. Sin exigir votos la diferencia es "
-        f"menor (+{num(KB['brecha'])}): el umbral no crea la ventaja, la confirma.",
+        f"menor (+{num(KB['brecha'])}): el umbral no crea la ventaja, la confirma. Dentro de las Series lideran {txt_g}, "
+        f"contando solo géneros con {G}+ series con {V}+ votos.",
         f"Solo una de cada cuatro series calificadas alcanza {V} votos: la conclusión vale para series con audiencia "
-        "suficiente para evaluarlas. Además, los datos no distinguen series originales de licenciadas.",
+        "suficiente para evaluarlas. Los datos no distinguen series originales de licenciadas. Documental y Western "
+        f"tienen notas altas, pero menos de {G} series con {V}+ votos: no se recomiendan con confianza.",
     )
 
-    # --- 2. Generos (50+ votos y al menos 100 series por genero, como en paises)
-    tg2 = H["series_top_generos"]
-    n_g = H["series_top_generos_n"]
-    txt_g = " y ".join(f"<b>{ud.es_genero(g)}</b> ({num(v)}; {miles(n_g[g])} series)" for g, v in tg2.items())
-    tarjeta_reco(
-        "2 · Dentro de las Series, apostar por los géneros mejor evaluados",
-        f"Priorizar {txt_g}.",
-        f"Son los dos géneros comparables con mejor nota en Series, contando solo series con {V}+ votos y géneros "
-        f"con al menos {ud.MIN_TITULOS_GRUPO} series así: la misma regla que se usa para los países.",
-        "Documental y Western tienen notas altas, pero menos de 100 series con 50+ votos: no se recomiendan con "
-        "confianza. Solo 8 géneros son comparables entre formatos.",
-    )
+    # --- 2. Paises con base suficiente
+    pa = H["paises"]
+    if len(pa) >= 2:
+        top2 = pa.head(2)
+        nombres = " y ".join(ud.es_pais(c) for c in top2["country"])
+        top_p = " y ".join(f"<b>{ud.es_pais(r['country'])}</b> ({num(r['nota'])} ± {num(r['error'])}; "
+                           f"{miles(r['titulos'])} series)" for _, r in top2.iterrows())
+        eeuu = ud.fila(PN0, "country", "United States of America")
+        if eeuu is None:
+            eeuu = ud.fila(PN0, "country", "United States")
+        txt_eeuu = (f" Como referencia, Estados Unidos tiene {num(eeuu['nota'])} ± {num(eeuu['error'])} con "
+                    f"{miles(eeuu['titulos'])} series." if eeuu is not None else "")
+        tarjeta_reco(
+            f"2 · Mirar primero {nombres}",
+            f"Explorar adquisición y coproducción en esos mercados; revisar cada uno con el filtro por país. "
+            f"Estados Unidos conserva la mayor escala.",
+            f"Nota promedio de las series con {V}+ votos, solo en países con {G} o más series así (pestaña 4): "
+            f"{top_p}.{txt_eeuu}",
+            "Sin exigir un mínimo de votos el orden de los países cambia: la comparación solo es confiable con ese mínimo.",
+        )
 
     # --- 3. Dos metricas
-    n_series_idx = int((H["indice"]["content_type"] == "Serie TV").sum())
     tarjeta_reco(
-        "3 · No decidir solo por popularidad: usar un índice combinado",
-        "Elegir títulos con un indicador que combine posición en popularidad y posición en nota.",
-        f"Dentro de cada formato (50+ votos), popularidad y nota se relacionan de forma débil: "
+        "3 · No decidir por popularidad sola",
+        "Usar el índice combinado (posición en popularidad y en nota) para las decisiones de luz verde.",
+        f"Dentro de cada formato ({V}+ votos), popularidad y nota se relacionan de forma débil: "
         f"ρ = {num(H['rho_pel50'])} en Películas y {num(H['rho_ser50'])} en Series. Mirar una sola métrica "
         f"deja fuera a muchos títulos buenos o populares.",
         "El índice de abajo es un ejemplo (50% popularidad, 50% nota), no una fórmula oficial: el peso es una "
         "decisión del negocio. En una lista mezclada dominan las Series, por eso la tabla muestra 5 de cada formato.",
     )
 
-    # --- 4. Paises
-    pa = H["paises"]
-    if len(pa) >= 2:
-        top_p = " y ".join(f"<b>{ud.es_pais(r['country'])}</b> ({num(r['nota'])}, {miles(r['titulos'])} series)"
-                           for _, r in pa.head(2).iterrows())
-        china = ud.fila(H["paises_vol"], "country", "China")
-        txt_china = ""
-        if china is not None and int(china["titulos_50_votos"]) < 100:
-            txt_china = (f" China tiene {miles(china['titulos'])} series, pero solo {miles(china['titulos_50_votos'])} "
-                         f"con 50+ votos: no se puede recomendar con confianza.")
-        tarjeta_reco(
-            "4 · En Series, mirar primero los mercados mejor evaluados",
-            f"Mirar primero {top_p}.",
-            "Nota promedio de las series con 50+ votos, solo en países con 100 o más series así (pestaña 4)."
-            + txt_china,
-            "Sin exigir un mínimo de votos, el orden de los países cambia: la comparación entre países "
-            "solo es confiable con ese mínimo.",
-        )
-
-    # --- 5. Apoyo: finanzas
+    # --- 4. Finanzas
     rg5 = H["roi_generos"]
     if not rg5.empty and H["roi_global"]:
         top5 = rg5.iloc[0]
+        g5 = ud.es_genero(top5["genres"])
         tarjeta_reco(
-            "5 · (Apoyo) En películas, mirar el retorno además de la nota",
-            f"Evaluar {ud.es_genero(top5['genres'])} por costo y retorno, no por calificación.",
-            f"{ud.es_genero(top5['genres'])} tiene el mayor retorno mediano: {num(top5['roi_mediano'], 1)}× frente a "
-            f"{num(H['roi_global'], 1)}× de la película típica, con un presupuesto mediano de "
-            f"US$ {num(top5['presupuesto_mediano'] / 1e6, 1)} millones.",
+            f"4 · Evaluar {g5} por retorno",
+            f"Revisar {g5} con costos reales antes de comprometer presupuesto: evaluarlo por costo y retorno, "
+            f"no por calificación.",
+            f"{g5} tiene el mayor retorno mediano: {num(top5['roi_mediano'], 1)}× frente a "
+            f"{num(H['roi_global'], 1)}× de la película típica ({miles(top5['titulos'])} películas con datos de dinero), "
+            f"con un presupuesto mediano de US$ {num(top5['presupuesto_mediano'] / 1e6, 1)} millones.",
             f"Solo {H['fin_cobertura'] * 100:.0f}% de las películas informa presupuesto e ingresos, y el retorno es "
             f"bruto (sin marketing). Es una señal, no una garantía.",
         )
 
-    pregunta("¿Cómo elegir títulos mirando popularidad y nota a la vez?")
+    # --- 5. Paises con pocos datos
+    china = ud.fila(H["paises_vol"], "country", "China")
+    china50 = ud.fila(PN0, "country", "China")
+    if china is not None and china50 is not None and int(china["titulos_50_votos"]) < G:
+        txt_5 = (f"China tiene la nota más alta ({num(china50['nota'])}), pero solo {miles(china['titulos_50_votos'])} "
+                 f"de sus {miles(china['titulos'])} series tienen {V}+ votos, con un margen de error de "
+                 f"± {num(china50['error'])}"
+                 + (" (" + " y ".join(f"{ud.es_pais(r['country'])}: ± {num(r['error'])}" for _, r in pa.head(2).iterrows())
+                    + ")." if len(pa) >= 2 else "."))
+    else:
+        txt_5 = (f"Un país con pocas series votadas puede quedar arriba o abajo por azar: su margen de error es grande.")
+    tarjeta_reco(
+        "5 · No recomendar países con pocos datos",
+        f"Exigir un mínimo de votos ({V}+) y de series ({G}+) antes de comparar países.",
+        txt_5,
+        "El filtro por país muestra en gris los países con pocas series: su nota es solo referencial.",
+    )
+
+    # --- 6. Datos de comportamiento
+    tarjeta_reco(
+        "6 · Cruzar con datos de comportamiento real",
+        "Integrar retención y tiempo de visualización antes de comprometer presupuesto de producción a gran escala.",
+        "El engagement se midió con aproximaciones (popularidad, votos y nota); las fuentes disponibles no tienen "
+        "datos de reproducción, retención ni abandono.",
+        "Hasta tener esos datos, estas recomendaciones indican dónde mirar primero, no dónde invertir únicamente.",
+    )
+
+    pregunta("¿Cómo elegir títulos mirando popularidad y nota a la vez? (recomendación 3)")
     st.markdown("**Ejemplo del indicador compuesto: los 5 mejores de cada formato** "
                 f"(mínimo {H['indice_votos']} votos)")
     top_idx = H["indice"]
@@ -1053,17 +1127,37 @@ with t8:
         titulo_ig = c2.text_input("Título personalizado (opcional)", key="ig_titulo",
                                   placeholder="Ej.: Series de Animación 2015–2025")
         criterio_ig = ud.CRITERIOS_RANKING[criterio_lbl]
+        _plural_c = ("películas" if list(tipos_sel) == ["Película"] else
+                     "series" if list(tipos_sel) == ["Serie TV"] else "series y películas")
+        paises_ig = st.multiselect(
+            "Países a comparar en la infografía (máximo 6)",
+            options=VOL_PAISES.index.tolist(), default=paises_sel[:6], max_selections=6,
+            format_func=ud.es_pais, placeholder="Ej.: Corea del Sur, Japón, Estados Unidos",
+            help=(f"Agrega a la infografía un gráfico con la nota de las {_plural_c} de cada país elegido, un formato por barra "
+                  f"(solo títulos con {ud.VOTOS_CONFIABLE}+ votos). Se precargan los países del "
+                  "panel lateral. Usa los mismos filtros de formato, años, votos y género, pero no el filtro de país, "
+                  "para que cada país cuente todos sus títulos."),
+        )
+        st.caption(
+            f"¿Por qué {ud.VOTOS_CONFIABLE}+ votos? El filtro de país no usa umbral: entran todos los títulos del país. "
+            f"El umbral se usa solo para **comparar notas entre países**: la nota de un título con pocos votos es "
+            f"poco confiable, y el promedio de un país con pocos títulos se mueve mucho por azar. Por eso un país con "
+            f"menos de {ud.MIN_TITULOS_GRUPO} títulos con {ud.VOTOS_CONFIABLE}+ votos en un formato aparece en color claro "
+            "(referencial), en vez de desaparecer."
+        )
+        df_comp_ig = ud.aplicar_filtros(df_catalogo, tipos_sel, anio_min, anio_max, votos_min, generos_sel, None)
         firma = (tuple(tipos_sel), anio_min, anio_max, votos_min, tuple(generos_sel), tuple(paises_sel),
-                 criterio_ig, titulo_ig)
+                 criterio_ig, titulo_ig, tuple(paises_ig))
 
         if st.button("Generar infografía con los filtros actuales", type="primary", key="ig_boton"):
             try:
                 fig_ig = ig.construir_infografia(df_f, df_catalogo, tipos_sel, anio_min, anio_max, votos_min,
                                                  generos_sel, criterio=criterio_ig, titulo=titulo_ig,
-                                                 peliculas=df_movies, paises=paises_sel)
+                                                 peliculas=df_movies, paises=paises_sel,
+                                                 paises_comp=paises_ig, df_comp=df_comp_ig)
                 informe_md = ig.construir_informe(df_f, df_catalogo, tipos_sel, anio_min, anio_max, votos_min,
                                                   generos_sel, criterio=criterio_ig, titulo=titulo_ig,
-                                                  paises=paises_sel)
+                                                  paises=paises_sel, paises_comp=paises_ig, df_comp=df_comp_ig)
                 png_b, pdf_b = ig.exportar(fig_ig)
                 st.session_state["ig_resultado"] = {"firma": firma, "png": png_b, "pdf": pdf_b,
                                                     "informe": informe_md}
