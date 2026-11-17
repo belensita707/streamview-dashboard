@@ -19,6 +19,9 @@ import matplotlib
 matplotlib.use("Agg")  # sin ventana: solo genera imagenes
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.patches import Rectangle  # noqa: E402
+from matplotlib.ticker import FuncFormatter  # noqa: E402
+
+import pandas as pd  # noqa: E402
 
 import utils_datos as ud  # noqa: E402
 from paleta import (  # noqa: E402
@@ -74,7 +77,7 @@ def describir_filtros(tipos, anio_min, anio_max, votos_min, generos, paises=None
         partes.append(", ".join(nombres[:3]) + (f" +{len(nombres) - 3}" if len(nombres) > 3 else ""))
     if paises:
         nombres = [ud.es_pais(p) for p in paises]
-        partes.append(", ".join(nombres[:2]) + (f" +{len(nombres) - 2}" if len(nombres) > 2 else ""))
+        partes.append(", ".join(nombres[:3]) + (f" +{len(nombres) - 3}" if len(nombres) > 3 else ""))
     if (anio_min, anio_max) != (2010, 2025):
         partes.append(f"{anio_min}–{anio_max}" if anio_min != anio_max else str(anio_min))
     if votos_min > 0:
@@ -278,7 +281,7 @@ def _evolucion(fig, df, rect):
     """Nota por año (si hay varios años) o por formato (si hay pocos)."""
     ax = fig.add_axes(rect)
     _estilo_ejes(ax)
-    por_anio = ud.calif_por_anio(df)
+    por_anio = ud.calif_por_anio(df, ud.MIN_TITULOS_ANIO, ud.VOTOS_ANIO)
     anios = sorted(por_anio["release_year"].unique())
     if len(anios) >= 3:
         for tipo in ("Película", "Serie TV"):
@@ -292,12 +295,13 @@ def _evolucion(fig, df, rect):
                     va="center", color=NEGRO)
         lo, hi = por_anio["calif_prom"].min(), por_anio["calif_prom"].max()
         ax.set_ylim(lo - 0.25, hi + 0.25)
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}".replace(".", ",")))  # coma decimal
         ax.set_xlim(anios[0] - 0.5, anios[-1] + 4.6)
         paso = max(1, (anios[-1] - anios[0]) // 4)
         ax.set_xticks(list(range(anios[0], anios[-1] + 1, paso)))
         ax.yaxis.grid(True, color="#E6E6E6", lw=0.6)
         ax.set_axisbelow(True)
-        return "Nota por año"
+        return f"Nota por año ({ud.VOTOS_ANIO}+ votos)"
     c = ud.calificados(df).groupby("content_type")["vote_average"].mean()
     tipos = [t for t in ("Película", "Serie TV") if t in c.index]
     ax.bar(range(len(tipos)), [c[t] for t in tipos], color=[COLOR_FORMATO[t] for t in tipos],
@@ -310,11 +314,8 @@ def _evolucion(fig, df, rect):
     return "Nota por formato"
 
 
-def _generos_top(fig, df, rect):
-    """Panel derecho: 4 generos con mejor nota (solo los 8 comparables si el segmento tiene los dos formatos)."""
-    ax = fig.add_axes(rect)
-    _estilo_ejes(ax)
-    ax.spines["left"].set_visible(False)
+def _tabla_generos_top(df, n=4):
+    """Generos con mejor nota (solo los 8 comparables si el segmento tiene los dos formatos)."""
     x = ud.calificados(ud.explode_columna(df, "genres"))
     # Mismo criterio de confiabilidad que las recomendaciones: solo titulos con 50+ votos,
     # salvo que el segmento sea tan chico que no queden generos para mostrar
@@ -328,7 +329,15 @@ def _generos_top(fig, df, rect):
         # con Series y Peliculas juntas solo se comparan los generos que existen en ambos formatos
         # (los mismos 8 de la pestana Generos); si no, los generos propios de las series inflarian la nota
         t = t[t["genres"].isin(ud.GENEROS_COMPARABLES)]
-    t = t.sort_values("nota", ascending=False).head(4)
+    return t.sort_values("nota", ascending=False).head(n)
+
+
+def _generos_top(fig, df, rect):
+    """Panel derecho: 4 generos con mejor nota (solo los 8 comparables si el segmento tiene los dos formatos)."""
+    ax = fig.add_axes(rect)
+    _estilo_ejes(ax)
+    ax.spines["left"].set_visible(False)
+    t = _tabla_generos_top(df, 4)
     if t.empty:
         ax.axis("off")
         ax.text(0.5, 0.5, "Sin datos suficientes", ha="center", va="center", fontsize=9,
@@ -365,6 +374,88 @@ def _bloque_paises(cv, x, y, w, h, df, paises=None):
     for i, r in t.reset_index(drop=True).iterrows():
         yy = y + h - 0.043 - i * 0.0185
         cv.text(x + 0.016, yy, f"{i + 1}. {_recorta(ud.es_pais(r['country']), 20)}", fontsize=11,
+                fontweight="bold", color=NEGRO, va="center")
+        cv.text(x + w - 0.016, yy, _num(r["nota"]), fontsize=11.5, color=AZUL, va="center", ha="right",
+                fontweight="bold")
+
+
+def _formatos_comparacion(tipos):
+    """Formatos a comparar por pais: los que estan activos en el filtro (Series y/o Peliculas)."""
+    return [f for f in ("Serie TV", "Película") if not tipos or f in tipos]
+
+
+def _tabla_paises_formatos(df_comp, paises, formatos):
+    """Una fila por pais y formato: titulos con 50+ votos, nota, margen de error y base (ok/pocos/sin)."""
+    V, G = ud.VOTOS_CONFIABLE, ud.MIN_TITULOS_GRUPO
+    partes = [ud.comparar_paises(df_comp, paises, formato=f, votos=V, min_titulos=G).assign(formato=f)
+              for f in formatos]
+    t = pd.concat(partes, ignore_index=True)
+    # orden de los paises: mejor nota comparable (Series primero), luego el resto en el orden elegido
+    clave = {}
+    for f in formatos:
+        for _, r in t[t["formato"] == f].iterrows():
+            if r["country"] not in clave and r["base"] == "ok":
+                clave[r["country"]] = -float(r["nota"])
+    orden = sorted(paises, key=lambda c: (clave.get(c, 0.0), list(paises).index(c)))
+    return t, orden
+
+
+def _paises_comparados(fig, cv, df_comp, paises, formatos, rect):
+    """Panel derecho cuando se eligen paises: por cada pais, una barra por formato (Series azul, Peliculas
+    amarillo) con la nota de sus titulos con 50+ votos. Color claro = menos de 100 titulos asi (pocos datos).
+    Se compara sobre el segmento SIN el filtro de pais, para que cada pais cuente todos sus titulos."""
+    V = ud.VOTOS_CONFIABLE
+    t, orden = _tabla_paises_formatos(df_comp, paises, formatos)
+    ax = fig.add_axes(rect)
+    _estilo_ejes(ax)
+    ax.spines["left"].set_visible(False)
+    ax.spines["bottom"].set_visible(False)
+    titulo = "Países elegidos · nota por formato" if len(formatos) == 2 else \
+        f"Países elegidos · nota de las {'series' if formatos[0] == 'Serie TV' else 'películas'}"
+    if (t["base"] == "sin").all():
+        ax.axis("off")
+        ax.text(0.5, 0.5, f"Los países elegidos no tienen títulos\ncon {V}+ votos en este segmento.",
+                ha="center", va="center", fontsize=9, color=TEXTO, transform=ax.transAxes)
+        return titulo
+    n, k = len(orden), len(formatos)
+    alto = 0.8 / k
+    fs = 8 if n * k <= 6 else 6.5          # con muchas barras, etiquetas mas chicas para que no se encimen
+    ax.set_xlim(0, 10)
+    ax.set_ylim(max(n, 3) - 0.45, -0.55)   # con 1-2 paises las barras no se vuelven gigantes
+    for i, pais in enumerate(orden):
+        for j, f in enumerate(formatos):
+            r = t[(t["country"] == pais) & (t["formato"] == f)].iloc[0]
+            y = i - 0.4 + alto * (j + 0.5)
+            if r["base"] == "sin":
+                ax.text(0.1, y, "sin datos", fontsize=7, color=GRIS_TEXTO, va="center", style="italic")
+                continue
+            ok = r["base"] == "ok"
+            ax.barh(y, r["nota"], height=alto * 0.85, color=COLOR_FORMATO[f], alpha=1 if ok else 0.35,
+                    edgecolor=NEGRO if ok else "none", linewidth=0.4)
+            ax.text(r["nota"] + 0.15, y, _num(r["nota"]) + ("" if ok else " pocos datos"), va="center",
+                    fontsize=fs if ok else fs - 1, fontweight="bold" if ok else "normal",
+                    color=NEGRO if ok else GRIS_TEXTO, clip_on=False)
+    ax.set_yticks(range(n))
+    ax.set_yticklabels([_recorta(ud.es_pais(c), 16) for c in orden], fontsize=9, color=NEGRO)
+    ax.tick_params(axis="y", length=0)
+    ax.set_xticks([])
+    return titulo
+
+
+def _bloque_generos(cv, x, y, w, h, df):
+    """Franja inferior izquierda cuando el panel de graficos lo ocupa la comparacion de paises."""
+    cv.add_patch(Rectangle((x, y), w, h, facecolor=BLANCO, edgecolor=GRIS_LINEA, lw=0.8))
+    cv.add_patch(Rectangle((x, y + h - 0.005), w, 0.005, color=AMARILLO, lw=0))
+    cv.text(x + 0.016, y + h - 0.019, "GÉNEROS MEJOR EVALUADOS", fontsize=8.5, fontweight="bold",
+            color=GRIS_TEXTO, va="center")
+    t = _tabla_generos_top(df, 3)
+    if t.empty:
+        cv.text(x + 0.016, y + h * 0.40, "Sin géneros con títulos suficientes.", fontsize=9.5, color=TEXTO,
+                va="center")
+        return
+    for i, r in t.reset_index(drop=True).iterrows():
+        yy = y + h - 0.043 - i * 0.0185
+        cv.text(x + 0.016, yy, f"{i + 1}. {_recorta(ud.es_genero(r['genres']), 22)}", fontsize=11,
                 fontweight="bold", color=NEGRO, va="center")
         cv.text(x + w - 0.016, yy, _num(r["nota"]), fontsize=11.5, color=AZUL, va="center", ha="right",
                 fontweight="bold")
@@ -448,12 +539,16 @@ def _hallazgos_cortos(df, catalogo, generos):
 # Funcion principal
 # ------------------------------------------------------------------
 def construir_infografia(df, catalogo, tipos, anio_min, anio_max, votos_min, generos,
-                         criterio="indice", titulo=None, peliculas=None, paises=None):
+                         criterio="indice", titulo=None, peliculas=None, paises=None,
+                         paises_comp=None, df_comp=None):
     """Arma la figura (A4). 'df' es el catalogo YA filtrado; 'catalogo' es el completo (para comparar).
     'peliculas' (opcional) es la tabla de peliculas con budget y revenue, para la franja de dinero.
 
     Orden de lectura: titulo -> que hacer -> 3 cifras -> mejores titulos -> grafico(s) -> 2 hallazgos ->
-    paises y dinero. Casi no hay texto explicativo: el detalle y las definiciones estan en el dashboard."""
+    paises y dinero. Casi no hay texto explicativo: el detalle y las definiciones estan en el dashboard.
+
+    'paises_comp' (opcional): paises a comparar en el panel derecho. 'df_comp' es el segmento con los mismos
+    filtros pero SIN el filtro de pais (si no se entrega, se usa 'df')."""
     if df.empty or len(ud.calificados(df)) < 5:
         raise ValueError("Hay muy pocos títulos calificados con estos filtros (mínimo 5). "
                          "Amplía el rango de años o quita algún filtro.")
@@ -519,13 +614,28 @@ def construir_infografia(df, catalogo, tipos, anio_min, anio_max, votos_min, gen
 
     # ---------- 5. Graficos ----------
     y_tit = y_fin - 0.026
-    alto_g = 0.112
+    paises_comp = list(paises_comp or [])
+    alto_g = 0.125 if paises_comp else 0.112
     y_ax = y_tit - 0.034 - alto_g
     con_generos = not generos
-    rect_izq = [0.085, y_ax, 0.355 if con_generos else 0.80, alto_g]
+    panel_derecho = bool(paises_comp) or con_generos
+    rect_izq = [0.085, y_ax, 0.355 if panel_derecho else 0.80, alto_g]
     titulo_b = _evolucion(fig, df, rect_izq)
     _titulo_seccion(cv, 0.05, y_tit, titulo_b)
-    if con_generos:
+    if paises_comp:
+        formatos_c = _formatos_comparacion(tipos)
+        titulo_c = _paises_comparados(fig, cv, df if df_comp is None else df_comp, paises_comp, formatos_c,
+                                      [0.66, y_ax, 0.24, alto_g])
+        _titulo_seccion(cv, 0.535, y_tit, titulo_c)
+        yl, xl = y_tit - 0.026, 0.60
+        for f in formatos_c:   # leyenda con el color real de cada formato
+            cv.add_patch(Rectangle((xl, yl - 0.004), 0.014, 0.008, color=COLOR_FORMATO[f], lw=0))
+            etiqueta = "Series" if f == "Serie TV" else "Películas"
+            cv.text(xl + 0.019, yl, etiqueta, fontsize=7.5, color=NEGRO, va="center")
+            xl += 0.019 + 0.0085 * len(etiqueta) + 0.015
+        cv.text(xl, yl, f"· {ud.VOTOS_CONFIABLE}+ votos · claro = pocos datos", fontsize=7, color=GRIS_TEXTO,
+                va="center", style="italic")
+    elif con_generos:
         titulo_c = _generos_top(fig, df, [0.715, y_ax, 0.235, alto_g])
         _titulo_seccion(cv, 0.575, y_tit, titulo_c)
 
@@ -541,7 +651,10 @@ def construir_infografia(df, catalogo, tipos, anio_min, anio_max, votos_min, gen
     # ---------- 7. Paises y dinero ----------
     y_f = 0.062
     alto_f = 0.092
-    _bloque_paises(cv, 0.05, y_f, 0.4425, alto_f, df, paises)
+    if paises_comp:
+        _bloque_generos(cv, 0.05, y_f, 0.4425, alto_f, df)
+    else:
+        _bloque_paises(cv, 0.05, y_f, 0.4425, alto_f, df, paises)
     _bloque_dinero(cv, 0.5075, y_f, 0.4425, alto_f, df, peliculas, generos)
 
     # ---------- Pie ----------
@@ -569,7 +682,7 @@ def _perfil_segmento(df, generos=()):
 
 
 def construir_informe(df, catalogo, tipos, anio_min, anio_max, votos_min, generos, criterio="indice", titulo=None,
-                      paises=None):
+                      paises=None, paises_comp=None, df_comp=None):
     """Informe breve (Markdown) del segmento filtrado: mismos datos que la infografia.
 
     Orden fijo: resumen -> 1 segmento analizado -> 2 cifras clave -> 3 hallazgos -> 4 ranking ->
@@ -637,7 +750,27 @@ def construir_informe(df, catalogo, tipos, anio_min, anio_max, votos_min, genero
               f"{_num(diag['razon_pop'], 1)}× la del catálogo. Se considera nota alta o baja a partir de "
               f"±{_num(UMBRAL_NOTA)} puntos y popularidad alta o baja a partir de ×{_num(UMBRAL_POP_ALTA)} / "
               f"×{_num(UMBRAL_POP_BAJA)}.", ""]
-    L += ["## 6. Cómo leer este informe", "",
+    sec = 6
+    if paises_comp:
+        V, G = ud.VOTOS_CONFIABLE, ud.MIN_TITULOS_GRUPO
+        formatos_c = _formatos_comparacion(tipos)
+        tc, orden = _tabla_paises_formatos(df if df_comp is None else df_comp, list(paises_comp), formatos_c)
+        etiqueta_base = {"ok": "Comparable", "pocos": f"Referencial (menos de {G})", "sin": f"Sin títulos con {V}+ votos"}
+        L += ["## 6. Comparación de países elegidos", "",
+              f"Nota promedio de los títulos con {V}+ votos de cada país, separada por formato, con los mismos filtros "
+              f"del segmento salvo el de país. Un país es comparable en un formato si tiene {G}+ títulos así; con menos, "
+              f"su promedio puede moverse mucho por azar (ver el margen de error).", "",
+              f"| País | Formato | Títulos con {V}+ votos | Nota | Margen de error | Base |", "|---|---|---|---|---|---|"]
+        for pais in orden:
+            for f in formatos_c:
+                r = tc[(tc["country"] == pais) & (tc["formato"] == f)].iloc[0]
+                nota_t = _num(r["nota"]) if pd.notna(r["nota"]) else "—"
+                err_t = f"± {_num(r['error'])}" if pd.notna(r["error"]) else "—"
+                fmt = "Series" if f == "Serie TV" else "Películas"
+                L.append(f"| {ud.es_pais(pais)} | {fmt} | {_miles(r['titulos'])} | {nota_t} | {err_t} | {etiqueta_base[r['base']]} |")
+        L.append("")
+        sec = 7
+    L += [f"## {sec}. Cómo leer este informe", "",
           "- La **popularidad** es un índice relativo de interés, no una cantidad de reproducciones.",
           "- Nota 0 = sin calificación: no entra en los promedios. Una nota con pocos votos es poco confiable, "
           "por eso el ranking exige un mínimo de votos.",

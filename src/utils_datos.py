@@ -218,11 +218,27 @@ def kpis(df):
     }
 
 
-def calif_por_anio(df):
-    return (
-        calificados(df).groupby(["release_year", "content_type"])["vote_average"]
-        .mean().reset_index().rename(columns={"vote_average": "calif_prom"})
+# Minimo de titulos calificados para mostrar un punto (anio y formato) en los graficos por anio
+MIN_TITULOS_ANIO = 10
+# Votos minimos de cada titulo en los graficos por anio: los estrenos recientes tienen muy pocos votos
+# (mediana de 4 en las peliculas de 2025) y bajan el promedio del ultimo anio sin que sea una tendencia real
+VOTOS_ANIO = 10
+
+
+def calif_por_anio(df, min_titulos=0, votos_min=0):
+    """Nota promedio por anio y formato. Con min_titulos > 0 se omiten los puntos con menos titulos
+    calificados que ese minimo: con un filtro de pais un anio puede quedar con 4 o 5 titulos y su
+    promedio es ruido (no evidencia)."""
+    c = calificados(df)
+    if votos_min:
+        c = c[c["vote_count"] >= votos_min]
+    t = (
+        c.groupby(["release_year", "content_type"])["vote_average"]
+        .agg(calif_prom="mean", titulos="size").reset_index()
     )
+    if min_titulos:
+        t = t[t["titulos"] >= min_titulos]
+    return t
 
 
 def brecha_por_votos(df, umbrales=(0, 10, 50, 100, 250, 500)):
@@ -324,6 +340,30 @@ def paises_nota_50(df, min_titulos=100):
     t["error"] = 1.96 * t["desv"] / np.sqrt(t["titulos"])
     t = t[t["titulos"] >= min_titulos].sort_values("nota", ascending=False).reset_index(drop=True)
     return t[cols]
+
+
+def comparar_paises(df, paises, formato="Serie TV", votos=50, min_titulos=100):
+    """Compara la nota de los paises elegidos dentro de un formato, usando solo titulos con 'votos'+ votos.
+
+    Devuelve una fila por pais elegido (aunque no tenga datos) con: titulos (con votos+), nota, error (margen
+    del 95%) y base: 'ok' (min_titulos+ titulos: comparable), 'pocos' (referencial) o 'sin' (sin titulos asi).
+    Se usa el umbral por dos razones: la nota de un titulo con pocos votos es poco confiable, y el promedio de
+    un pais con pocos titulos se mueve mucho por azar (eso es lo que mide el margen de error)."""
+    cols = ["country", "titulos", "nota", "error", "base"]
+    if not paises:
+        return pd.DataFrame(columns=cols)
+    s = calificados(df[df["content_type"] == formato])
+    s = s[s["vote_count"] >= votos]
+    x = explode_columna(s, "country") if len(s) else pd.DataFrame(columns=["country", "id_unico", "vote_average"])
+    x = x[x["country"].isin(paises)]
+    t = (x.groupby("country").agg(titulos=("id_unico", "nunique"), nota=("vote_average", "mean"),
+                                  desv=("vote_average", "std")).reindex(paises).reset_index())
+    t["titulos"] = t["titulos"].fillna(0).astype(int)
+    t["error"] = 1.96 * t["desv"] / np.sqrt(t["titulos"].where(t["titulos"] > 0))
+    t["base"] = np.where(t["titulos"] >= min_titulos, "ok", np.where(t["titulos"] > 0, "pocos", "sin"))
+    orden = {"ok": 0, "pocos": 1, "sin": 2}
+    t = t.assign(_o=t["base"].map(orden)).sort_values(["_o", "nota"], ascending=[True, False])
+    return t[cols].reset_index(drop=True)
 
 
 def correlacion_por_formato(df, votos_min=50):
